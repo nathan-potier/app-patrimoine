@@ -3,46 +3,414 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mon Patrimoine</title>
+    <title>MyPatrimoine</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0F172A">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Patrimoine">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="icon-180.png">
+    <link rel="icon" type="image/png" href="icon-192.png">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts pour un design moderne -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    
-    <div id="app">
-        <h1>Dashboard Patrimoine</h1>
-        <button id="login-btn">Connexion avec Google</button>
-        <div id="user-info"></div>
+
+    <!-- Écran de connexion -->
+    <div id="login-screen" class="screen active">
+        <div class="login-card">
+            <h1>MyPatrimoine</h1>
+            <p>Reprenez le contrôle de vos finances.</p>
+            <button id="login-btn" class="btn-primary">Continuer avec Google</button>
+        </div>
     </div>
 
-    <!-- Script en type="module" (Méthode moderne) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    <!-- Écran Principal (Dashboard) -->
+    <div id="dashboard-screen" class="screen hidden">
+        <header class="topbar">
+            <h2>Vue d'ensemble</h2>
+            <div class="user-menu">
+                <span id="user-email"></span>
+                <button id="logout-btn" class="btn-secondary">Déconnexion</button>
+            </div>
+        </header>
 
-        // ⚠️ REMPLACE PAR TA VRAIE CONFIGURATION TROUVÉE SUR LA CONSOLE
-        const firebaseConfig = {
-            apiKey: "AIzaSyATXciA0jR4liu_YbQaZgsV3dmAWHxIs3Y",
-            authDomain: "mypatrimoine-12ea8.firebaseapp.com",
-            projectId: "mypatrimoine-12ea8",
-            storageBucket: "mypatrimoine-12ea8.firebasestorage.app",
-            messagingSenderId: "264004329695",
-            appId: "1:264004329695:web:ec7a03f6fb3f912859096a"
-        };
+        <main class="dashboard-content">
+            <!-- Patrimoine Net Global -->
+            <div class="card net-worth-card mb-2">
+                <h3>Patrimoine Net Total</h3>
+                <h2 class="amount highlight-green">0,00 €</h2>
+            </div>
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const provider = new GoogleAuthProvider();
+            <!-- Grille des catégories -->
+            <div class="dashboard-grid">
+                <div class="card category-card" id="card-liquidites">
+                    <div class="card-header">
+                        <h3>Liquidités & Comptes</h3>
+                        <span class="icon">🏦</span>
+                    </div>
+                    <h2 class="amount">0,00 €</h2>
+                    <div id="accounts-breakdown" class="accounts-breakdown"></div>
+                </div>
 
-        document.getElementById('login-btn').addEventListener('click', async () => {
-            try {
-                const result = await signInWithPopup(auth, provider);
-                document.getElementById('user-info').innerText = `Connecté : ${result.user.email}`;
-            } catch (error) {
-                console.error("Erreur", error);
-            }
-        });
-    </script>
+                <div class="card category-card" id="card-bourse">
+                    <div class="card-header">
+                        <h3>Marchés Financiers</h3>
+                        <span class="icon">📈</span>
+                    </div>
+                    <h2 class="amount">0,00 €</h2>
+                </div>
+
+                <div class="card category-card">
+                    <div class="card-header">
+                        <h3>Immobilier & SCI</h3>
+                        <span class="icon">🏠</span>
+                    </div>
+                    <h2 class="amount">0,00 €</h2>
+                </div>
+            </div>
+
+            <div class="dashboard-widgets">
+
+                <!-- Colonne Gauche : Graphique de Diversification -->
+                <div class="widget-column">
+                    <div class="card chart-card">
+                        <h3>Répartition du Patrimoine</h3>
+                        <div class="chart-container">
+                            <canvas id="patrimoine-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card list-card mt-2">
+                        <h3>Dernières Opérations (Liquidités)</h3>
+                        <ul id="tx-list" class="item-list">
+                            <p class="text-muted">Chargement...</p>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Colonne Droite : Listes des Actifs -->
+                <div class="widget-column">
+                    <div class="card list-card mb-2">
+                        <h3>Portefeuille Bourse (Temps Réel)</h3>
+                        <ul id="bourse-list" class="item-list">
+                            <p class="text-muted">Chargement...</p>
+                        </ul>
+                    </div>
+
+                    <div class="card list-card">
+                        <h3>Biens Immobiliers</h3>
+                        <ul id="immo-list" class="item-list">
+                            <p class="text-muted">Chargement...</p>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+
+        <!-- Bouton d'action rapide flottant -->
+        <button id="fab-add" class="fab">+</button>
+    </div>
+
+    <!-- Écran Analyse & Budget -->
+    <div id="budget-screen" class="screen hidden">
+        <header class="topbar">
+            <button id="btn-back-dashboard" class="btn-secondary">← Retour Dashboard</button>
+            <h2>Analyse Mensuelle</h2>
+            <div class="user-menu">
+                <div class="month-navigation">
+                    <button id="btn-prev-month" class="btn-icon">◀</button>
+                    <span class="badge" id="current-month-badge">Mois en cours</span>
+                    <button id="btn-next-month" class="btn-icon">▶</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="dashboard-content">
+            <!-- Bilan du mois -->
+            <div class="dashboard-grid mb-2">
+                <div class="card">
+                    <h3>Revenus du mois</h3>
+                    <h2 id="month-in" class="amount highlight-green">0,00 €</h2>
+                </div>
+                <div class="card">
+                    <h3>Dépenses du mois</h3>
+                    <h2 id="month-out" class="amount highlight-red">0,00 €</h2>
+                </div>
+                <div class="card">
+                    <h3>Capacité d'Épargne (Reste)</h3>
+                    <h2 id="month-rest" class="amount">0,00 €</h2>
+                </div>
+                <div class="card">
+                    <h3>Reste à Vivre Réel</h3>
+                    <h2 id="month-rest-reel" class="amount">0,00 €</h2>
+                    <p id="upcoming-charges" class="text-muted" style="text-align: left; margin-top: 0.5rem;">Chargement...</p>
+                </div>
+            </div>
+
+            <!-- Alertes intelligentes -->
+            <div id="alerts-box"></div>
+
+            <div class="dashboard-widgets">
+                <!-- Colonne Gauche : Analyse des catégories + Graphique -->
+                <div class="widget-column">
+                    <div class="card list-card">
+                        <h3>Où va mon argent ? (Budgets cibles)</h3>
+                        <div id="category-analysis" class="item-list">
+                            <p class="text-muted">Chargement de l'analyse...</p>
+                        </div>
+                    </div>
+
+                    <div class="card chart-card mt-2">
+                        <h3>Répartition des dépenses du mois</h3>
+                        <div class="chart-container">
+                            <canvas id="budget-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Gestion des budgets cibles -->
+                    <div class="card list-card mt-2">
+                        <h3>🎯 Définir mes budgets mensuels</h3>
+                        <div id="budgets-manager"></div>
+                        <button id="btn-save-budgets" class="btn-primary full-width">Enregistrer les budgets</button>
+                    </div>
+                </div>
+
+                <!-- Colonne Droite : Historique modifiable -->
+                <div class="widget-column">
+                    <div class="card list-card">
+                        <h3>Toutes les transactions</h3>
+                        <ul id="detailed-tx-list" class="item-list">
+                            <p class="text-muted">Chargement...</p>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Écran Analyse Bourse -->
+    <div id="bourse-screen" class="screen hidden">
+        <header class="topbar">
+            <button id="btn-back-dashboard-bourse" class="btn-secondary">← Retour</button>
+            <h2>Analyse Boursière</h2>
+            <button id="btn-toggle-perf" class="btn-secondary">Afficher en %</button>
+        </header>
+        <main class="dashboard-content">
+            <div class="dashboard-grid mb-2">
+                <div class="card">
+                    <h3>Plus-Value Globale</h3>
+                    <h2 id="bourse-global-perf" class="amount">0,00 €</h2>
+                </div>
+                <div class="card">
+                    <h3>Performance PEA</h3>
+                    <h2 id="bourse-pea-perf" class="amount">0,00 €</h2>
+                </div>
+                <div class="card">
+                    <h3>Performance CTO</h3>
+                    <h2 id="bourse-cto-perf" class="amount">0,00 €</h2>
+                </div>
+            </div>
+            <div class="card list-card">
+                <div class="card-header" style="margin-bottom: 1rem;">
+                    <h3 style="margin-bottom: 0;">Détails du Portefeuille</h3>
+                    <select id="bourse-filter" class="styled-select" style="width: auto; padding: 0.5rem 1rem; font-size: 0.9rem;">
+                        <option value="ALL">Tout afficher</option>
+                        <option value="PEA">Juste les PEA</option>
+                        <option value="CTO">Juste les CTO</option>
+                    </select>
+                </div>
+                <ul id="bourse-detailed-list" class="item-list">
+                    <p class="text-muted">Chargement...</p>
+                </ul>
+            </div>
+        </main>
+    </div>
+
+
+    <!-- Modale d'ajout (Cachée par défaut) -->
+    <div id="add-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Ajouter une opération</h2>
+                <button id="close-modal" class="close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Vue 1 : Choix de l'action -->
+                <div id="modal-view-choice" class="active-view">
+                    <p class="modal-subtitle">Que souhaitez-vous ajouter ?</p>
+                    <div class="action-grid">
+                        <button class="action-btn" data-type="express">
+                            <span class="action-icon">⚡</span>
+                            Dépense express (2 taps)
+                        </button>
+                        <button class="action-btn" data-type="transaction">
+                            <span class="action-icon">💸</span>
+                            Dépense / Revenu détaillé
+                        </button>
+                        <button class="action-btn" data-type="bourse">
+                            <span class="action-icon">📈</span>
+                            Action (Bourse)
+                        </button>
+                        <button class="action-btn" data-type="immo">
+                            <span class="action-icon">🏠</span>
+                            Immobilier
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Vue 1bis : Dépense Express -->
+                <div id="modal-view-express" class="hidden-view">
+                    <button class="back-btn back-to-choices">← Retour</button>
+                    <form id="express-form" class="quick-form">
+                        <div class="input-group amount-group">
+                            <input type="number" id="express-amount" step="0.01" min="0" placeholder="0.00" inputmode="decimal" required>
+                            <span class="currency-symbol">€</span>
+                        </div>
+                        <div class="express-cats" id="express-cats">
+                            <button type="button" class="express-cat active" data-cat="Alimentation">🍔<span>Resto / Courses</span></button>
+                            <button type="button" class="express-cat" data-cat="Logement">🏠<span>Logement</span></button>
+                            <button type="button" class="express-cat" data-cat="Transports">🚗<span>Transports</span></button>
+                            <button type="button" class="express-cat" data-cat="Loisirs">🎬<span>Loisirs</span></button>
+                            <button type="button" class="express-cat" data-cat="Autre">🛍️<span>Autre</span></button>
+                        </div>
+                        <select id="express-account" class="styled-select">
+                            <option>Chargement des comptes...</option>
+                        </select>
+                        <button type="submit" class="btn-primary full-width">Valider la dépense</button>
+                    </form>
+                </div>
+
+                <!-- Vue 2 : Formulaire Dépense/Revenu -->
+                <div id="modal-view-transaction" class="hidden-view">
+                    <button class="back-btn back-to-choices">← Retour</button>
+                    <form id="transaction-form" class="quick-form">
+                        <!-- Toggle Dépense / Revenu / Virement -->
+                        <div class="type-toggle">
+                            <input type="radio" id="type-expense" name="tx_type" value="expense" checked>
+                            <label for="type-expense" class="toggle-btn red-toggle">Dépense</label>
+
+                            <input type="radio" id="type-income" name="tx_type" value="income">
+                            <label for="type-income" class="toggle-btn green-toggle">Revenu</label>
+
+                            <input type="radio" id="type-transfer" name="tx_type" value="transfer">
+                            <label for="type-transfer" class="toggle-btn blue-toggle">Virement</label>
+                        </div>
+
+                        <!-- Saisie du montant (Grand format) -->
+                        <div class="input-group amount-group">
+                            <input type="number" id="tx-amount" step="0.01" min="0" placeholder="0.00" inputmode="decimal" required>
+                            <span class="currency-symbol">€</span>
+                        </div>
+
+                        <!-- Compte Unique (Pour Dépense / Revenu) -->
+                        <div class="input-group flex-row" id="group-account-single">
+                            <select id="tx-account" class="styled-select" required>
+                                <option>Chargement des comptes...</option>
+                            </select>
+                            <button type="button" id="btn-add-account" class="btn-secondary add-acc-btn" title="Ajouter un nouveau compte bancaire">+</button>
+                        </div>
+
+                        <!-- Comptes Source et Cible (Uniquement pour Virement) -->
+                        <div class="input-group d-none" id="group-account-transfer">
+                            <select id="tx-from" class="styled-select mb-1"></select>
+                            <select id="tx-to" class="styled-select"></select>
+                        </div>
+
+                        <!-- Catégorie / Libellé -->
+                        <div class="input-group">
+                            <input type="text" id="tx-label" placeholder="Libellé (ex: McDo, Salaire...)" required>
+                        </div>
+
+                        <!-- Catégorie -->
+                        <div class="input-group" id="group-category">
+                            <select id="tx-category" class="styled-select" required>
+                                <option value="Salaire">Salaire & Revenus</option>
+                                <option value="Logement">Logement & Factures</option>
+                                <option value="Alimentation">Alimentation & Courses</option>
+                                <option value="Transports">Transports (Essence, Train...)</option>
+                                <option value="Loisirs">Loisirs & Sorties</option>
+                                <option value="Autre">Autre</option>
+                            </select>
+                        </div>
+
+                        <!-- Fréquence -->
+                        <div class="input-group" id="group-frequency">
+                            <select id="tx-frequency" class="styled-select" required>
+                                <option value="Ponctuel">Une seule fois (Ponctuel)</option>
+                                <option value="Mensuel">Tous les mois (Abonnement / Salaire)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <input type="date" id="tx-date" class="input-date" required>
+                        </div>
+
+                        <!-- ID Caché pour la modification -->
+                        <input type="hidden" id="tx-id">
+
+                        <button type="submit" class="btn-primary full-width" id="submit-tx">Valider</button>
+                    </form>
+                </div>
+
+                <!-- Vue 3 : Formulaire Bourse -->
+                <div id="modal-view-bourse" class="hidden-view">
+                    <button class="back-btn back-to-choices">← Retour</button>
+                    <form id="bourse-form" class="quick-form">
+                        <div class="input-group autocomplete-container">
+                            <input type="text" id="bourse-search" placeholder="Rechercher (ex: Google, Total...)" autocomplete="off" required>
+                            <input type="hidden" id="bourse-ticker" required>
+                            <input type="hidden" id="bourse-name">
+                            <ul id="bourse-results" class="autocomplete-results hidden"></ul>
+                        </div>
+
+                        <div class="input-group">
+                            <input type="number" id="bourse-quantity" step="0.0001" min="0" placeholder="Quantité (ex: 10)" required>
+                        </div>
+                        <div class="input-group">
+                            <input type="number" id="bourse-price" step="0.01" min="0" placeholder="Prix unitaire d'achat (€)" required>
+                        </div>
+                        <div class="input-group">
+                            <select id="bourse-enveloppe" class="styled-select" required>
+                                <option value="PEA">PEA</option>
+                                <option value="CTO">Compte Titres (CTO)</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn-primary full-width">Ajouter l'action</button>
+                    </form>
+                </div>
+
+                <!-- Vue 4 : Formulaire Immobilier -->
+                <div id="modal-view-immo" class="hidden-view">
+                    <button class="back-btn back-to-choices">← Retour</button>
+                    <form id="immo-form" class="quick-form">
+                        <div class="input-group">
+                            <input type="text" id="immo-name" placeholder="Nom du bien (ex: Appartement Lyon)" required>
+                        </div>
+                        <div class="input-group">
+                            <select id="immo-type" class="styled-select" required>
+                                <option value="Physique">Bien Physique</option>
+                                <option value="SCI">SCI</option>
+                                <option value="SCPI">SCPI</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <input type="number" id="immo-value" step="1" min="0" placeholder="Valeur estimée (€)" required>
+                        </div>
+                        <div class="input-group">
+                            <input type="number" id="immo-surface" step="1" min="0" placeholder="Superficie (m²)">
+                        </div>
+                        <button type="submit" class="btn-primary full-width">Ajouter le bien</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lien vers notre fichier JS séparé -->
+    <script type="module" src="app.js"></script>
 </body>
 </html>

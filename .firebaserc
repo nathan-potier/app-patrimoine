@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "mypatrimoine-12ea8"
-  }
+  },
+  "targets": {
+    "mypatrimoine-12ea8": {
+      "hosting": {
+        "mondashboard": [
+          "mypatrimoine-np"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
