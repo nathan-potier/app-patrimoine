@@ -20,8 +20,9 @@ const PRICE_API_URL = "https://noisy-moon-34c5.nathan-pro-po.workers.dev";
 const livePricesCache = {};
 const livePricesCacheMeta = {};
 const formatEuro = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
-const CATEGORIES = ['Salaire', 'Logement', 'Alimentation', 'Transports', 'Loisirs', 'Autre'];
-const CHART_PALETTE = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4'];
+const CHART_PALETTE = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899', '#14B8A6'];
+
+let userCategories = ['Salaire', 'Logement', 'Alimentation', 'Transports', 'Loisirs', 'Autre'];
 
 const setEl = (id, prop, val) => { const el = document.getElementById(id); if (el) el[prop] = val; };
 
@@ -83,7 +84,7 @@ radioToggles.forEach(radio => {
         if (e.target.value === 'transfer') {
             document.getElementById('group-account-single').classList.add('d-none'); document.getElementById('group-account-transfer').classList.remove('d-none');
             if(document.getElementById('group-category')) document.getElementById('group-category').classList.add('d-none');
-            if(document.getElementById('group-frequency')) document.getElementById('group-frequency').classList.add('d-none');
+            if(document.getElementById('group-frequency')) document.getElementById('group-frequency').classList.remove('d-none');
             document.getElementById('tx-label').value = "Virement interne";
         } else {
             document.getElementById('group-account-single').classList.remove('d-none'); document.getElementById('group-account-transfer').classList.add('d-none');
@@ -94,7 +95,7 @@ radioToggles.forEach(radio => {
     });
 });
 
-let unsubscribeTransactions = null, unsubscribeBourse = null, unsubscribeImmo = null, unsubscribeAccounts = null, unsubscribeBudgets = null, unsubscribeBourseCash = null;
+let unsubscribeTransactions = null, unsubscribeBourse = null, unsubscribeImmo = null, unsubscribeAccounts = null, unsubscribeBudgets = null, unsubscribeBourseCash = null, unsubscribeCategories = null;
 let patrimoineChart = null, budgetChart = null;
 let userAccountsList = []; let budgetsMap = {}; 
 
@@ -127,14 +128,24 @@ function loadDashboardData(userId) {
 
     const updateNetWorthAndChart = () => {
         const netWorth = totalLiquidites + totalBourse + totalImmo;
-        setEl('card-liquidites', 'querySelector(".amount").innerText', formatEuro.format(totalLiquidites));
-        setEl('card-immo', 'querySelector(".amount").innerText', formatEuro.format(totalImmo));
+        
+        // CORRECTION DE L'AFFICHAGE DU SOLDE COMPTE COURANT & IMMO
+        const liqAmount = document.querySelector('#card-liquidites .amount');
+        if (liqAmount) liqAmount.innerText = formatEuro.format(totalLiquidites);
+        
+        const immoCard = document.querySelectorAll('.category-card')[2];
+        if (immoCard) {
+            const immoAmount = immoCard.querySelector('.amount');
+            if (immoAmount) immoAmount.innerText = formatEuro.format(totalImmo);
+        }
+
         const elNetWorth = document.querySelector('.net-worth-card .amount');
         if (elNetWorth) {
             elNetWorth.innerText = formatEuro.format(netWorth); 
             elNetWorth.className = netWorth >= 0 ? "amount highlight-green" : "amount highlight-red";
         }
         if (patrimoineChart) { patrimoineChart.data.datasets[0].data = [Math.max(0, totalLiquidites), totalBourse, totalImmo]; patrimoineChart.update(); }
+        if (window.applyPrivacyMode) window.applyPrivacyMode();
     };
 
     document.getElementById('card-liquidites')?.addEventListener('click', () => { dashboardScreen.classList.add('hidden'); dashboardScreen.classList.remove('active'); budgetScreen.classList.remove('hidden'); budgetScreen.classList.add('active'); viewedDate = new Date(); renderTransactions(); });
@@ -143,11 +154,21 @@ function loadDashboardData(userId) {
     document.getElementById('btn-next-month')?.addEventListener('click', () => { viewedDate = new Date(viewedDate.getFullYear(), viewedDate.getMonth() + 1, 1); renderTransactions(); });
     
     document.getElementById('bourse-filter')?.addEventListener('change', (e) => { currentBourseFilter = e.target.value; if(globalRenderBourse) globalRenderBourse(); });
-    
     document.getElementById('btn-toggle-perf')?.addEventListener('click', (e) => {
         showBoursePercent = !showBoursePercent; 
         e.target.innerText = showBoursePercent ? "Afficher en €" : "Afficher en %";
         if(globalRenderBourse) globalRenderBourse();
+    });
+
+    unsubscribeCategories = onSnapshot(doc(db, `users/${userId}/settings`, 'categories'), (docSnap) => {
+        if (docSnap.exists() && docSnap.data().list) {
+            userCategories = docSnap.data().list;
+        } else {
+            userCategories = ['Salaire', 'Logement', 'Alimentation', 'Transports', 'Loisirs', 'Autre'];
+        }
+        const catHtml = userCategories.map(name => `<option value="${name}">${name}</option>`).join('');
+        setEl('tx-category', 'innerHTML', catHtml);
+        renderBudgetsManager();
     });
 
     unsubscribeBourseCash = onSnapshot(doc(db, `users/${userId}/bourse_settings`, 'cash'), (docSnap) => {
@@ -158,6 +179,13 @@ function loadDashboardData(userId) {
     unsubscribeAccounts = onSnapshot(query(collection(db, `users/${userId}/accounts`)), (snapshot) => {
         userAccountsList = []; snapshot.forEach(doc => userAccountsList.push(doc.data().name));
         if (userAccountsList.length === 0) { addDoc(collection(db, `users/${userId}/accounts`), { name: "Compte Courant", date: serverTimestamp() }); return; }
+        
+        userAccountsList.sort((a, b) => {
+            if (a === "Compte Courant") return -1;
+            if (b === "Compte Courant") return 1;
+            return a.localeCompare(b);
+        });
+
         const optionsHtml = userAccountsList.map(name => `<option value="${name}">${name}</option>`).join('');
         ['tx-account', 'tx-from', 'tx-to', 'express-account'].forEach(id => { setEl(id, 'innerHTML', optionsHtml); });
     });
@@ -187,18 +215,23 @@ function loadDashboardData(userId) {
 
             if(htmlList.split('<li>').length <= 5) {
                 const accountBadge = data.type === 'transfer' ? `🔄 ${data.from_account} ➔ ${data.to_account}` : data.account || "Compte Courant";
+                const freqTag = data.frequency === 'Mensuel' ? ' • Mensuel' : '';
                 let amountColorClass = data.amount > 0 ? 'text-green' : (data.type === 'transfer' ? 'text-muted' : '');
-                htmlList += `<li><div class="item-details"><span class="item-title">${data.label} <span class="badge">${accountBadge}</span></span><span class="item-sub">${dateStr}</span></div><div class="item-details right"><span class="item-value ${amountColorClass}">${formatEuro.format(data.amount)}</span></div></li>`;
+                htmlList += `<li><div class="item-details"><span class="item-title">${data.label} <span class="badge">${accountBadge}${freqTag}</span></span><span class="item-sub">${dateStr}</span></div><div class="item-details right"><span class="item-value ${amountColorClass}">${formatEuro.format(data.amount)}</span></div></li>`;
             }
 
             if (txDate.getMonth() === viewedMonth && txDate.getFullYear() === viewedYear) {
-                if (data.type !== 'transfer') {
+                if (data.type === 'transfer') {
+                    if (data.from_account === "Compte Courant") monthOut += Math.abs(data.amount);
+                    if (data.to_account === "Compte Courant") monthIn += Math.abs(data.amount);
+                } else {
                     if (data.amount > 0) monthIn += data.amount;
                     if (data.amount < 0) { monthOut += Math.abs(data.amount); const cat = data.category || 'Autre'; if (!categoriesExpenses[cat]) categoriesExpenses[cat] = 0; categoriesExpenses[cat] += Math.abs(data.amount); }
                 }
-                const safeData = encodeURIComponent(JSON.stringify({ label: data.label, type: data.type, amount: data.amount, account: data.account, from_account: data.from_account, to_account: data.to_account, category: data.category, frequency: data.frequency, dateISO: `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}-${String(txDate.getDate()).padStart(2, '0')}` }));
-                const isRecurring = data.frequency === 'Mensuel' ? '🔄' : '';
-                detailedHtmlList += `<li><div class="item-details"><span class="item-title">${data.label} ${isRecurring} <span class="badge">${data.category || 'Virement'}</span></span><span class="item-sub">${dateStr} - ${data.account || (data.from_account + '➔' + data.to_account)}</span></div><div class="item-actions"><span class="item-value ${data.amount > 0 ? 'text-green' : (data.type === 'transfer' ? 'text-muted' : '')}" style="margin-right: 15px;">${formatEuro.format(data.amount)}</span><button class="action-small edit btn-edit-tx" data-id="${docSnapshot.id}" data-full="${safeData}">✏️</button><button class="action-small delete btn-del-tx" data-id="${docSnapshot.id}">🗑️</button></div></li>`;
+
+                const safeData = encodeURIComponent(JSON.stringify({ label: data.label, type: data.type, amount: data.amount, account: data.account, from_account: data.from_account, to_account: data.to_account, category: data.category, frequency: data.frequency || "Ponctuel", dateISO: `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}-${String(txDate.getDate()).padStart(2, '0')}` }));
+                const isRecurring = data.frequency === 'Mensuel' ? '🔄 Mensuel' : '';
+                detailedHtmlList += `<li><div class="item-details"><span class="item-title">${data.label} <span class="badge">${data.type === 'transfer' ? 'Virement' : (data.category || 'Autre')}</span> ${isRecurring ? `<span class="badge" style="background:#3B82F6;color:white;">${isRecurring}</span>` : ''}</span><span class="item-sub">${dateStr} - ${data.account || (data.from_account + ' ➔ ' + data.to_account)}</span></div><div class="item-actions"><span class="item-value ${data.amount > 0 ? 'text-green' : (data.type === 'transfer' ? 'text-muted' : '')}" style="margin-right: 15px;">${formatEuro.format(data.amount)}</span><button class="action-small edit btn-edit-tx" data-id="${docSnapshot.id}" data-full="${safeData}">✏️</button><button class="action-small delete btn-del-tx" data-id="${docSnapshot.id}">🗑️</button></div></li>`;
             }
         });
         
@@ -212,13 +245,14 @@ function loadDashboardData(userId) {
         setEl('month-rest', 'innerText', formatEuro.format(epargne));
         setEl('month-rest', 'className', epargne >= 0 ? "amount highlight-green" : "amount highlight-red");
 
-        // RESTAURATION DU BUDGET
+        // MODIFICATION : Un virement mensuel vers un autre compte est maintenant géré comme une charge fixe !
         const realizedLabels = new Set();
-        globalTxDocs.forEach(t => { const d = t.data(); const dt = parseDate(d.date); if (dt.getMonth() === viewedMonth && dt.getFullYear() === viewedYear && d.type === 'expense' && d.frequency === 'Mensuel') realizedLabels.add(d.label); });
+        globalTxDocs.forEach(t => { const d = t.data(); const dt = parseDate(d.date); if (dt.getMonth() === viewedMonth && dt.getFullYear() === viewedYear && (d.type === 'expense' || (d.type === 'transfer' && d.from_account === 'Compte Courant')) && d.frequency === 'Mensuel') realizedLabels.add(d.label); });
         const now = new Date(); const isHistory = viewedYear < now.getFullYear() || (viewedYear === now.getFullYear() && viewedMonth < now.getMonth());
         let recurringCharges = [];
-        if (!isHistory) { globalTxDocs.forEach(t => { const d = t.data(); if (d.type === 'expense' && d.frequency === 'Mensuel' && !realizedLabels.has(d.label)) recurringCharges.push({ label: d.label, amount: Math.abs(d.amount), day: parseDate(d.date).getDate() }); }); }
+        if (!isHistory) { globalTxDocs.forEach(t => { const d = t.data(); if ((d.type === 'expense' || (d.type === 'transfer' && d.from_account === 'Compte Courant')) && d.frequency === 'Mensuel' && !realizedLabels.has(d.label)) recurringCharges.push({ label: d.label, amount: Math.abs(d.amount), day: parseDate(d.date).getDate() }); }); }
         const chargesRestantes = recurringCharges.reduce((s, c) => s + c.amount, 0);
+        
         const resteReel = monthIn - monthOut - chargesRestantes;
         setEl('month-rest-reel', 'innerText', formatEuro.format(resteReel));
         setEl('month-rest-reel', 'className', resteReel >= 0 ? "amount highlight-green" : "amount highlight-red");
@@ -341,7 +375,6 @@ function loadDashboardData(userId) {
             setEl('bourse-cto-cash', 'innerText', formatEuro.format(bourseCash['CTO'] || 0));
             setEl('bourse-av-cash', 'innerText', formatEuro.format(bourseCash['A.V.'] || 0));
 
-            // Ajout du bouton ✏️ à côté de la performance pour pouvoir réinitialiser un test
             const makePerfHtml = (perfObj, env) => `${perfObj.txt} <button class="action-small edit btn-edit-realized" data-env="${env}" style="background:none;border:none;cursor:pointer;font-size:0.8rem;padding:0;margin-left:5px;" title="Corriger la plus-value enregistrée">✏️</button>`;
 
             const pPea = formatPerfCombined(valPeaAssets, achatPea, bourseCash['PEA'] || 0, 'PEA');
@@ -377,18 +410,26 @@ function loadDashboardData(userId) {
             htmlList += `<li><div class="item-details"><span class="item-title">${data.nom} <span class="badge">${data.type}</span></span><span class="item-sub">${data.surface > 0 ? data.surface + ' m²' : '-'}</span></div><div class="item-details right"><span class="item-value">${formatEuro.format(data.valeur)}</span></div></li>`;
         });
         setEl('immo-list', 'innerHTML', htmlList || '<p class="text-muted">Aucun bien.</p>');
-        setEl('card-immo', 'querySelector(".amount").innerText', formatEuro.format(totalImmo));
         updateNetWorthAndChart();
     });
 }
 
 function renderBudgetsManager() {
     const bm = document.getElementById('budgets-manager'); if (!bm) return;
-    bm.innerHTML = CATEGORIES.map(cat => `<div class="budget-row"><span>${cat}</span><input type="number" class="budget-input" data-cat="${cat}" min="0" step="10" placeholder="Pas de budget" value="${budgetsMap[cat] || ''}"></div>`).join('');
+    let html = userCategories.map(cat => `
+        <div class="budget-row">
+            <span style="display:flex;align-items:center;gap:5px;">
+                ${cat}
+                <button type="button" class="action-small edit btn-edit-cat" data-cat="${cat}" style="font-size:0.9rem;padding:0;min-width:auto;min-height:auto;" title="Renommer">✏️</button>
+            </span>
+            <input type="number" class="budget-input" data-cat="${cat}" min="0" step="10" placeholder="Pas de budget" value="${budgetsMap[cat] || ''}">
+        </div>`).join('');
+    html += `<button id="btn-add-category" type="button" class="btn-secondary full-width mt-2">+ Ajouter une catégorie</button>`;
+    bm.innerHTML = html;
 }
 
 function stopDashboardData() {
-    if (unsubscribeTransactions) unsubscribeTransactions(); if (unsubscribeBourse) unsubscribeBourse(); if (unsubscribeImmo) unsubscribeImmo(); if (unsubscribeAccounts) unsubscribeAccounts(); if (unsubscribeBudgets) unsubscribeBudgets(); if (unsubscribeBourseCash) unsubscribeBourseCash();
+    if (unsubscribeTransactions) unsubscribeTransactions(); if (unsubscribeBourse) unsubscribeBourse(); if (unsubscribeImmo) unsubscribeImmo(); if (unsubscribeAccounts) unsubscribeAccounts(); if (unsubscribeBudgets) unsubscribeBudgets(); if (unsubscribeBourseCash) unsubscribeBourseCash(); if (unsubscribeCategories) unsubscribeCategories();
     if (patrimoineChart) patrimoineChart.destroy(); if (budgetChart) budgetChart.destroy();
 }
 
@@ -432,11 +473,27 @@ if (btnSaveBudgets) { btnSaveBudgets.addEventListener('click', async () => { con
 
 document.getElementById('transaction-form').addEventListener('submit', async (e) => {
     e.preventDefault(); const user = auth.currentUser; if (!user) return;
-    const txId = document.getElementById('tx-id').value; const type = document.querySelector('input[name="tx_type"]:checked').value; const amountRaw = parseFloat(document.getElementById('tx-amount').value); let finalAmount = Math.abs(amountRaw);
-    const dateInput = document.getElementById('tx-date').value; const txDate = dateInput ? new Date(dateInput) : new Date();
-    let dataToSave = { label: document.getElementById('tx-label').value, type: type, date: txDate };
-    if (type === 'transfer') { dataToSave.amount = finalAmount; dataToSave.from_account = document.getElementById('tx-from').value; dataToSave.to_account = document.getElementById('tx-to').value; } else { dataToSave.amount = type === 'expense' ? -finalAmount : finalAmount; dataToSave.account = document.getElementById('tx-account').value; dataToSave.category = document.getElementById('tx-category') ? document.getElementById('tx-category').value : "Autre"; dataToSave.frequency = document.getElementById('tx-frequency') ? document.getElementById('tx-frequency').value : "Ponctuel"; }
-    if (txId) { await updateDoc(doc(db, `users/${user.uid}/transactions`, txId), dataToSave); } else { await addDoc(collection(db, `users/${user.uid}/transactions`), dataToSave); }
+    const txId = document.getElementById('tx-id').value;
+    const type = document.querySelector('input[name="tx_type"]:checked').value;
+    const amountRaw = parseFloat(document.getElementById('tx-amount').value);
+    const finalAmount = Math.abs(amountRaw);
+    const dateInput = document.getElementById('tx-date').value;
+    const txDate = dateInput ? new Date(dateInput) : new Date();
+    const freqEl = document.getElementById('tx-frequency');
+    const frequency = freqEl ? freqEl.value : "Ponctuel";
+
+    let dataToSave = { label: document.getElementById('tx-label').value, type: type, frequency: frequency, date: txDate };
+    if (type === 'transfer') {
+        dataToSave.amount = finalAmount;
+        dataToSave.from_account = document.getElementById('tx-from').value;
+        dataToSave.to_account = document.getElementById('tx-to').value;
+    } else {
+        dataToSave.amount = type === 'expense' ? -finalAmount : finalAmount;
+        dataToSave.account = document.getElementById('tx-account').value;
+        dataToSave.category = document.getElementById('tx-category') ? document.getElementById('tx-category').value : "Autre";
+    }
+    if (txId) { await updateDoc(doc(db, `users/${user.uid}/transactions`, txId), dataToSave); }
+    else { await addDoc(collection(db, `users/${user.uid}/transactions`), dataToSave); }
     closeAndResetModal();
 });
 
@@ -481,9 +538,45 @@ document.getElementById('immo-form').addEventListener('submit', async (e) => {
     closeAndResetModal();
 });
 
+// Événements globaux avec délégation (Indestructibles)
 document.addEventListener('click', async (e) => {
     const user = auth.currentUser;
     if (!user) return;
+
+    const btnAddCat = e.target.closest('#btn-add-category');
+    if (btnAddCat) {
+        e.preventDefault();
+        const newCat = prompt("Nom de la nouvelle catégorie ?");
+        if (newCat && newCat.trim() !== "" && !userCategories.includes(newCat.trim())) {
+            const updated = [...userCategories, newCat.trim()];
+            await setDoc(doc(db, `users/${user.uid}/settings`, 'categories'), { list: updated }, { merge: true });
+        }
+        return;
+    }
+
+    const btnEditCat = e.target.closest('.btn-edit-cat');
+    if (btnEditCat) {
+        e.preventDefault();
+        const oldCat = btnEditCat.dataset.cat;
+        const newCat = prompt(`Renommer la catégorie "${oldCat}" ?\n(Ceci mettra à jour toutes les transactions associées pour garder votre budget exact)`, oldCat);
+        if (newCat && newCat.trim() !== "" && newCat.trim() !== oldCat) {
+            const finalCat = newCat.trim();
+            const updated = userCategories.map(c => c === oldCat ? finalCat : c);
+            await setDoc(doc(db, `users/${user.uid}/settings`, 'categories'), { list: updated }, { merge: true });
+            
+            if (budgetsMap[oldCat]) {
+                await setDoc(doc(db, `users/${user.uid}/budgets`, finalCat), { category: finalCat, limit: budgetsMap[oldCat] });
+                await deleteDoc(doc(db, `users/${user.uid}/budgets`, oldCat));
+            }
+            
+            const txSnap = await getDocs(collection(db, `users/${user.uid}/transactions`));
+            txSnap.forEach(async (d) => {
+                if (d.data().category === oldCat) await updateDoc(doc(db, `users/${user.uid}/transactions`, d.id), { category: finalCat });
+            });
+            alert(`Catégorie renommée en "${finalCat}" avec succès !`);
+        }
+        return;
+    }
 
     const btnCash = e.target.closest('.btn-edit-cash');
     if (btnCash) {
@@ -497,7 +590,6 @@ document.addEventListener('click', async (e) => {
         return;
     }
 
-    // Le bouton pour corriger la Plus-Value de ton test boursier !
     const btnRealized = e.target.closest('.btn-edit-realized');
     if (btnRealized) {
         const env = btnRealized.dataset.env;
@@ -563,7 +655,6 @@ document.addEventListener('click', async (e) => {
         document.getElementById('tx-label').value = txData.label;
         document.getElementById('tx-amount').value = Math.abs(txData.amount);
         
-        // Date parser aussi dans la modification !
         const txDate = parseDate(txData.dateISO);
         document.getElementById('tx-date').value = `${txDate.getFullYear()}-${String(txDate.getMonth() + 1).padStart(2, '0')}-${String(txDate.getDate()).padStart(2, '0')}`;
         
@@ -575,11 +666,60 @@ document.addEventListener('click', async (e) => {
         } else { 
             document.getElementById('tx-account').value = txData.account; 
             document.getElementById('tx-category').value = txData.category || "Autre"; 
-            document.getElementById('tx-frequency').value = txData.frequency || "Ponctuel"; 
         }
+        document.getElementById('tx-frequency').value = txData.frequency || "Ponctuel";
+        
         document.getElementById('submit-tx').innerText = "Modifier l'opération";
         showModalView(document.getElementById('modal-view-transaction')); 
         document.getElementById('add-modal').classList.remove('hidden');
         return;
     }
 });
+
+
+// ==========================================
+// MODE CONFIDENTIALITÉ (SECOUER POUR FLOUTER)
+// ==========================================
+let isPrivacyMode = localStorage.getItem('mypatrimoine_privacy') === 'true';
+
+window.applyPrivacyMode = function() {
+    // Sélectionne tous les gros montants du Dashboard
+    const elementsToBlur = document.querySelectorAll('#dashboard-screen .amount, #dashboard-screen .acc-value');
+    elementsToBlur.forEach(el => {
+        if (isPrivacyMode) el.classList.add('privacy-blur');
+        else el.classList.remove('privacy-blur');
+    });
+};
+
+function togglePrivacyMode() {
+    isPrivacyMode = !isPrivacyMode;
+    localStorage.setItem('mypatrimoine_privacy', isPrivacyMode);
+    if (window.navigator && window.navigator.vibrate) navigator.vibrate(50); // Petit retour haptique
+    window.applyPrivacyMode();
+}
+
+// Détection du mouvement (Secouer le téléphone)
+let lastX = 0, lastY = 0, lastZ = 0;
+let lastUpdate = 0;
+const SHAKE_THRESHOLD = 15; // Sensibilité
+
+window.addEventListener('devicemotion', (e) => {
+    const current = e.accelerationIncludingGravity;
+    if (!current || current.x === null) return;
+
+    const curTime = Date.now();
+    if ((curTime - lastUpdate) > 100) {
+        const diffTime = curTime - lastUpdate;
+        lastUpdate = curTime;
+        const speed = Math.abs(current.x + current.y + current.z - lastX - lastY - lastZ) / diffTime * 10000;
+
+        if (speed > SHAKE_THRESHOLD * 100) {
+            togglePrivacyMode();
+        }
+        lastX = current.x; lastY = current.y; lastZ = current.z;
+    }
+});
+
+// ASTUCE : Sur certains iPhones récents (iOS 13+), Apple bloque parfois le "secouement" par défaut.
+// On ajoute donc un "Double Tap" (double-clic) sur la grosse carte "Patrimoine Net Total" comme solution de secours parfaite !
+document.querySelector('.net-worth-card')?.addEventListener('dblclick', togglePrivacyMode);
