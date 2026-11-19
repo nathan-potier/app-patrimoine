@@ -1,7 +1,7 @@
 // Import des modules Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, serverTimestamp, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyATXciA0jR4liu_YbQaZgsV3dmAWHxIs3Y",
@@ -527,30 +527,69 @@ document.getElementById('express-form').addEventListener('submit', async (e) => 
 });
 
 document.getElementById('bourse-form').addEventListener('submit', async (e) => {
-    e.preventDefault(); const user = auth.currentUser; if (!user) return;
+    e.preventDefault();
+    const user = auth.currentUser;
+    if (!user) return;
+
     const searchVal = document.getElementById('bourse-search').value.trim();
-    // Si on tape un nom libre (non reconnu par l'autocomplétion), on utilise le nom comme ticker
-    const ticker = document.getElementById('bourse-ticker').value.toUpperCase() || searchVal.toUpperCase();
-    const name = document.getElementById('bourse-name').value || searchVal; 
+    const ticker = (document.getElementById('bourse-ticker').value || searchVal).toUpperCase();
+    const name = document.getElementById('bourse-name').value || searchVal;
     const tracking = document.getElementById('bourse-tracking').value;
-    const priceAchat = parseFloat(document.getElementById('bourse-price').value);
-    
-    let assetData = {
-        nom: name, 
-        ticker: ticker,
-        quantity: parseFloat(document.getElementById('bourse-quantity').value),
-        price_achat: priceAchat,
-        enveloppe: document.getElementById('bourse-enveloppe').value,
-        tracking: tracking,
-        date_ajout: serverTimestamp()
-    };
-    
-    // Si suivi manuel, on initialise le prix actuel avec le prix d'achat
-    if (tracking === 'manual') {
-        assetData.prix_actuel = priceAchat;
+    const addedQty = parseFloat(document.getElementById('bourse-quantity').value);
+    const addedPrice = parseFloat(document.getElementById('bourse-price').value);
+    const enveloppe = document.getElementById('bourse-enveloppe').value;
+
+    if (!ticker || isNaN(addedQty) || addedQty <= 0 || isNaN(addedPrice) || addedPrice < 0) {
+        return alert("Veuillez renseigner des valeurs valides.");
     }
 
-    await addDoc(collection(db, `users/${user.uid}/assets_bourse`), assetData);
+    // Recherche d'une ligne existante pour le même ticker et la même enveloppe
+    const existingSnap = await getDocs(collection(db, `users/${user.uid}/assets_bourse`));
+    let matchingDoc = null;
+
+    existingSnap.forEach((d) => {
+        const item = d.data();
+        if ((item.ticker || '').toUpperCase() === ticker && item.enveloppe === enveloppe) {
+            matchingDoc = { id: d.id, ...item };
+        }
+    });
+
+    if (matchingDoc) {
+        const oldQty = parseFloat(matchingDoc.quantity) || 0;
+        const oldPru = parseFloat(matchingDoc.price_achat) || 0;
+        const totalQty = oldQty + addedQty;
+        const newPru = totalQty > 0 ? ((oldQty * oldPru) + (addedQty * addedPrice)) / totalQty : addedPrice;
+
+        const updatePayload = {
+            quantity: totalQty,
+            price_achat: newPru,
+            nom: matchingDoc.nom || name,
+            tracking: matchingDoc.tracking || tracking
+        };
+
+        if ((matchingDoc.tracking || tracking) === 'manual') {
+            updatePayload.prix_actuel = addedPrice;
+        }
+
+        await updateDoc(doc(db, `users/${user.uid}/assets_bourse`, matchingDoc.id), updatePayload);
+    } else {
+        const assetData = {
+            nom: name,
+            ticker: ticker,
+            quantity: addedQty,
+            price_achat: addedPrice,
+            enveloppe: enveloppe,
+            tracking: tracking,
+            date_ajout: serverTimestamp()
+        };
+
+        if (tracking === 'manual') {
+            assetData.prix_actuel = addedPrice;
+        }
+
+        await addDoc(collection(db, `users/${user.uid}/assets_bourse`), assetData);
+    }
+
     closeAndResetModal();
 });
 
