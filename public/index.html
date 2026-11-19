@@ -214,6 +214,10 @@
                     <h3>Performance CTO</h3>
                     <h2 id="bourse-cto-perf" class="amount">0,00 €</h2>
                 </div>
+                <div class="card">
+                    <h3>Performance A.V.</h3>
+                    <h2 id="bourse-av-perf" class="amount">0,00 €</h2>
+                </div>
             </div>
             <div class="card list-card">
                 <div class="card-header" style="margin-bottom: 1rem;">
@@ -222,6 +226,7 @@
                         <option value="ALL">Tout afficher</option>
                         <option value="PEA">Juste les PEA</option>
                         <option value="CTO">Juste les CTO</option>
+                        <option value="A.V.">Juste l'A.V.</option>
                     </select>
                 </div>
                 <ul id="bourse-detailed-list" class="item-list">
@@ -361,12 +366,17 @@
                     <button class="back-btn back-to-choices">← Retour</button>
                     <form id="bourse-form" class="quick-form">
                         <div class="input-group autocomplete-container">
-                            <input type="text" id="bourse-search" placeholder="Rechercher (ex: Google, Total...)" autocomplete="off" required>
-                            <input type="hidden" id="bourse-ticker" required>
+                            <input type="text" id="bourse-search" placeholder="Nom de l'actif ou ISIN..." autocomplete="off" required>
+                            <input type="hidden" id="bourse-ticker">
                             <input type="hidden" id="bourse-name">
                             <ul id="bourse-results" class="autocomplete-results hidden"></ul>
                         </div>
-
+                        <div class="input-group">
+                            <select id="bourse-tracking" class="styled-select" required>
+                                <option value="auto">Suivi Automatique (Bourse direct)</option>
+                                <option value="manual">Saisie Manuelle (Non coté / Allocation)</option>
+                            </select>
+                        </div>
                         <div class="input-group">
                             <input type="number" id="bourse-quantity" step="0.0001" min="0" placeholder="Quantité (ex: 10)" required>
                         </div>
@@ -377,9 +387,10 @@
                             <select id="bourse-enveloppe" class="styled-select" required>
                                 <option value="PEA">PEA</option>
                                 <option value="CTO">Compte Titres (CTO)</option>
+                                <option value="A.V.">Assurance Vie (A.V.)</option>
                             </select>
                         </div>
-                        <button type="submit" class="btn-primary full-width">Ajouter l'action</button>
+                        <button type="submit" class="btn-primary full-width">Ajouter l'actif</button>
                     </form>
                 </div>
 
