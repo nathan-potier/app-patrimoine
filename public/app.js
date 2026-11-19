@@ -3,7 +3,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebas
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-// CONFIGURATION FIREBASE
 const firebaseConfig = {
     apiKey: "AIzaSyATXciA0jR4liu_YbQaZgsV3dmAWHxIs3Y",
     authDomain: "mypatrimoine-12ea8.firebaseapp.com",
@@ -32,12 +31,11 @@ const loginBtn = document.getElementById('login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const userEmailSpan = document.getElementById('user-email');
 
-// Variables d'état globales
 let showBoursePercent = false; 
 let currentBourseFilter = 'ALL'; 
 
 // ==========================================
-// GESTION DE L'AUTHENTIFICATION
+// AUTHENTIFICATION
 // ==========================================
 onAuthStateChanged(auth, (user) => {
     if (user) {
@@ -116,11 +114,11 @@ let userAccountsList = []; let budgetsMap = {};
 function initChart() {
     const ctx = document.getElementById('patrimoine-chart').getContext('2d');
     if(patrimoineChart) patrimoineChart.destroy();
-    patrimoineChart = new Chart(ctx, { type: 'doughnut', data: { labels: ['Liquidités', 'Bourse', 'Immobilier'], datasets: [{ data: [0, 0, 0], backgroundColor: ['#3B82F6', '#8B5CF6', '#10B981'], borderWidth: 0, hoverOffset: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#F8FAFC', padding: 20 } } }, cutout: '75%' } });
+    patrimoineChart = new Chart(ctx, { type: 'doughnut', data: { labels: ['Liquidités', 'Marchés', 'Immobilier'], datasets: [{ data: [0, 0, 0], backgroundColor: ['#3B82F6', '#8B5CF6', '#10B981'], borderWidth: 0, hoverOffset: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#F8FAFC', padding: 20 } } }, cutout: '75%' } });
 }
 
 async function fetchPrices(tickers) {
-    const missing = [...new Set(tickers)].filter(t => !(t in livePricesCache));
+    const missing = [...new Set(tickers)].filter(t => t && !(t in livePricesCache));
     for (let i = 0; i < missing.length; i += 30) {
         const chunk = missing.slice(i, i + 30);
         try {
@@ -143,7 +141,7 @@ function loadDashboardData(userId) {
     const elNetWorth = document.querySelector('.net-worth-card .amount');
     let totalLiquidites = 0, totalBourse = 0, totalImmo = 0;
 
-    let globalRenderBourse = null; // Déclaré ici pour être accessible partout
+    let globalRenderBourse = null; 
 
     const updateNetWorthAndChart = () => {
         const netWorth = totalLiquidites + totalBourse + totalImmo;
@@ -158,7 +156,6 @@ function loadDashboardData(userId) {
     document.getElementById('btn-prev-month')?.addEventListener('click', () => { viewedDate = new Date(viewedDate.getFullYear(), viewedDate.getMonth() - 1, 1); renderTransactions(); });
     document.getElementById('btn-next-month')?.addEventListener('click', () => { viewedDate = new Date(viewedDate.getFullYear(), viewedDate.getMonth() + 1, 1); renderTransactions(); });
 
-    // Événements Bourse (% et Filtre)
     document.getElementById('btn-toggle-perf')?.addEventListener('click', (e) => {
         showBoursePercent = !showBoursePercent;
         e.target.innerText = showBoursePercent ? "Afficher en €" : "Afficher en %";
@@ -287,17 +284,22 @@ function loadDashboardData(userId) {
     unsubscribeBourse = onSnapshot(query(collection(db, `users/${userId}/assets_bourse`)), (snapshot) => {
         const bourseDocs = snapshot.docs;
         globalRenderBourse = async () => {
-            await fetchPrices(bourseDocs.map(d => d.data().ticker));
+            // N'interroger l'API que pour les actifs en suivi "auto"
+            const autoTickers = bourseDocs.map(d => d.data()).filter(d => d.tracking !== 'manual').map(d => d.ticker);
+            await fetchPrices(autoTickers);
             
-            let newTotalBourse = 0, valPea = 0, achatPea = 0, valCto = 0, achatCto = 0, totalAchatGlobale = 0;
+            let newTotalBourse = 0, valPea = 0, achatPea = 0, valCto = 0, achatCto = 0, valAv = 0, achatAv = 0, totalAchatGlobale = 0;
             let enrichedDocs = [];
 
             for (const docSnapshot of bourseDocs) {
                 const data = docSnapshot.data();
-                const livePrice = getLivePrice(data.ticker, data.price_achat);
+                const isManual = data.tracking === 'manual';
+                // Si manuel, le prix live est le prix actuel saisi (ou prix d'achat par défaut). Sinon, on interroge le cache API.
+                const livePrice = isManual ? (data.prix_actuel || data.price_achat) : getLivePrice(data.ticker, data.price_achat);
+                
                 const valeurActuelle = data.quantity * livePrice;
                 const valAchat = data.quantity * data.price_achat;
-                enrichedDocs.push({ id: docSnapshot.id, data, livePrice, valeurActuelle, valAchat });
+                enrichedDocs.push({ id: docSnapshot.id, data, livePrice, valeurActuelle, valAchat, isManual });
             }
 
             enrichedDocs.sort((a, b) => b.valeurActuelle - a.valeurActuelle);
@@ -306,27 +308,29 @@ function loadDashboardData(userId) {
             let dashboardHtml = '';
 
             enrichedDocs.forEach(item => {
-                const { id, data, livePrice, valeurActuelle, valAchat } = item;
+                const { id, data, livePrice, valeurActuelle, valAchat, isManual } = item;
                 const plusValue = valeurActuelle - valAchat;
                 const percent = valAchat > 0 ? (plusValue / valAchat) * 100 : 0;
                 
                 newTotalBourse += valeurActuelle; totalAchatGlobale += valAchat;
                 if (data.enveloppe === 'PEA') { valPea += valeurActuelle; achatPea += valAchat; }
                 if (data.enveloppe === 'CTO') { valCto += valeurActuelle; achatCto += valAchat; }
+                if (data.enveloppe === 'A.V.') { valAv += valeurActuelle; achatAv += valAchat; }
 
                 const pnlClass = plusValue >= 0 ? 'text-green' : 'text-red';
                 const sign = plusValue > 0 ? '+' : '';
                 const pnlDisplay = showBoursePercent ? `${sign}${percent.toFixed(2)}%` : `${sign}${formatEuro.format(plusValue)}`;
-                
                 const displayName = data.nom || data.ticker;
 
                 if(dashboardHtml.split('<li>').length <= 5) {
                     dashboardHtml += `<li><div class="item-details"><span class="item-title">${displayName} <span class="badge">${data.enveloppe}</span></span><span class="item-sub">${data.quantity} parts @ ${formatEuro.format(livePrice)}</span></div><div class="item-details right"><span class="item-value">${formatEuro.format(valeurActuelle)}</span><span class="item-sub ${pnlClass}">${pnlDisplay}</span></div></li>`;
                 }
 
-                // C'est ici que s'applique le filtre
                 if (currentBourseFilter === 'ALL' || data.enveloppe === currentBourseFilter) {
-                    detailedHtml += `<li><div class="item-details"><span class="item-title">${displayName} <span class="badge">${data.enveloppe}</span></span><span class="item-sub">${data.quantity} parts @ ${formatEuro.format(livePrice)}</span></div><div class="item-actions"><div class="item-details right" style="margin-right: 15px;"><span class="item-value">${formatEuro.format(valeurActuelle)}</span><span class="item-sub ${pnlClass}">${pnlDisplay}</span></div><button class="btn-secondary sell-bourse" data-id="${id}" data-qty="${data.quantity}" data-ticker="${data.ticker}">Vendre</button></div></li>`;
+                    // Si actif manuel, on rajoute un bouton "Modifier Prix" ✏️
+                    const editBtn = isManual ? `<button class="action-small edit btn-edit-price" data-id="${id}" data-name="${displayName}" data-price="${livePrice}" title="Mettre à jour le prix">✏️</button>` : '';
+                    
+                    detailedHtml += `<li><div class="item-details"><span class="item-title">${displayName} <span class="badge">${data.enveloppe} ${isManual?'(Manuel)':''}</span></span><span class="item-sub">${data.quantity} parts @ ${formatEuro.format(livePrice)}</span></div><div class="item-actions"><div class="item-details right" style="margin-right: 15px;"><span class="item-value">${formatEuro.format(valeurActuelle)}</span><span class="item-sub ${pnlClass}">${pnlDisplay}</span></div>${editBtn}<button class="btn-secondary sell-bourse" data-id="${id}" data-qty="${data.quantity}" data-ticker="${data.ticker}">Vendre</button></div></li>`;
                 }
             });
 
@@ -336,9 +340,7 @@ function loadDashboardData(userId) {
             elBourse.innerText = formatEuro.format(totalBourse);
 
             const formatPerf = (val, achat) => {
-                const diff = val - achat;
-                const perc = achat > 0 ? (diff / achat) * 100 : 0;
-                const sign = diff > 0 ? '+' : '';
+                const diff = val - achat; const perc = achat > 0 ? (diff / achat) * 100 : 0; const sign = diff > 0 ? '+' : '';
                 return { txt: showBoursePercent ? `${sign}${perc.toFixed(2)}%` : `${sign}${formatEuro.format(diff)}`, color: diff >= 0 ? 'amount highlight-green' : 'amount highlight-red' };
             };
 
@@ -353,19 +355,44 @@ function loadDashboardData(userId) {
 
                 const pCto = formatPerf(valCto, achatCto);
                 document.getElementById('bourse-cto-perf').innerText = pCto.txt; document.getElementById('bourse-cto-perf').className = pCto.color;
+
+                const pAv = formatPerf(valAv, achatAv);
+                if(document.getElementById('bourse-av-perf')) {
+                    document.getElementById('bourse-av-perf').innerText = pAv.txt; document.getElementById('bourse-av-perf').className = pAv.color;
+                }
             }
 
             updateNetWorthAndChart();
+            
+            // Bouton de vente
             document.querySelectorAll('.sell-bourse').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
-                    const docId = e.currentTarget.dataset.id;
-                    const maxQty = parseFloat(e.currentTarget.dataset.qty);
+                    const docId = e.currentTarget.dataset.id; const maxQty = parseFloat(e.currentTarget.dataset.qty);
                     const qtyToSellStr = prompt(`Combien de parts voulez-vous vendre ? (Maximum: ${maxQty})`);
                     if (qtyToSellStr !== null && qtyToSellStr.trim() !== "") {
                         const qtyToSell = parseFloat(qtyToSellStr.replace(',', '.'));
                         if (isNaN(qtyToSell) || qtyToSell <= 0 || qtyToSell > maxQty) return alert("Quantité invalide.");
                         if (qtyToSell === maxQty) await deleteDoc(doc(db, `users/${userId}/assets_bourse`, docId));
                         else await updateDoc(doc(db, `users/${userId}/assets_bourse`, docId), { quantity: maxQty - qtyToSell });
+                    }
+                });
+            });
+
+            // NOUVEAU : Bouton pour mettre à jour le prix manuellement
+            document.querySelectorAll('.btn-edit-price').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const docId = e.currentTarget.dataset.id;
+                    const nom = e.currentTarget.dataset.name;
+                    const oldPrice = parseFloat(e.currentTarget.dataset.price);
+                    
+                    const newPriceStr = prompt(`Nouveau prix actuel pour ${nom} ? (Prix actuel : ${oldPrice} €)`);
+                    if (newPriceStr !== null && newPriceStr.trim() !== "") {
+                        const newPrice = parseFloat(newPriceStr.replace(',', '.'));
+                        if (!isNaN(newPrice) && newPrice >= 0) {
+                            await updateDoc(doc(db, `users/${userId}/assets_bourse`, docId), { prix_actuel: newPrice });
+                        } else {
+                            alert("Prix invalide.");
+                        }
                     }
                 });
             });
@@ -477,17 +504,29 @@ document.getElementById('express-form').addEventListener('submit', async (e) => 
 
 document.getElementById('bourse-form').addEventListener('submit', async (e) => {
     e.preventDefault(); const user = auth.currentUser; if (!user) return;
-    const ticker = document.getElementById('bourse-ticker').value.toUpperCase();
-    const name = document.getElementById('bourse-name').value || ticker; 
+    const searchVal = document.getElementById('bourse-search').value.trim();
+    // Si on tape un nom libre (non reconnu par l'autocomplétion), on utilise le nom comme ticker
+    const ticker = document.getElementById('bourse-ticker').value.toUpperCase() || searchVal.toUpperCase();
+    const name = document.getElementById('bourse-name').value || searchVal; 
+    const tracking = document.getElementById('bourse-tracking').value;
+    const priceAchat = parseFloat(document.getElementById('bourse-price').value);
     
-    await addDoc(collection(db, `users/${user.uid}/assets_bourse`), {
+    let assetData = {
         nom: name, 
         ticker: ticker,
         quantity: parseFloat(document.getElementById('bourse-quantity').value),
-        price_achat: parseFloat(document.getElementById('bourse-price').value),
+        price_achat: priceAchat,
         enveloppe: document.getElementById('bourse-enveloppe').value,
+        tracking: tracking,
         date_ajout: serverTimestamp()
-    });
+    };
+    
+    // Si suivi manuel, on initialise le prix actuel avec le prix d'achat
+    if (tracking === 'manual') {
+        assetData.prix_actuel = priceAchat;
+    }
+
+    await addDoc(collection(db, `users/${user.uid}/assets_bourse`), assetData);
     closeAndResetModal();
 });
 
