@@ -1,4 +1,3 @@
-// Import des modules Firebase
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import { getFirestore, collection, addDoc, getDocs, serverTimestamp, onSnapshot, query, doc, deleteDoc, updateDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -34,10 +33,8 @@ const userEmailSpan = document.getElementById('user-email');
 
 let showBoursePercent = false; 
 let currentBourseFilter = 'ALL'; 
+let bourseCash = { PEA: 0, CTO: 0, "A.V.": 0 }; // Poches de liquidités
 
-// ==========================================
-// AUTHENTIFICATION
-// ==========================================
 onAuthStateChanged(auth, (user) => {
     if (user) {
         loginScreen.classList.remove('active'); loginScreen.classList.add('hidden');
@@ -54,9 +51,6 @@ onAuthStateChanged(auth, (user) => {
 loginBtn.addEventListener('click', async () => { try { await signInWithPopup(auth, provider); } catch (error) { alert("Erreur lors de la connexion."); } });
 logoutBtn.addEventListener('click', async () => { try { await signOut(auth); } catch (error) { console.error(error); } });
 
-// ==========================================
-// NAVIGATION PAGES & MODALE
-// ==========================================
 const fabAdd = document.getElementById('fab-add');
 const addModal = document.getElementById('add-modal');
 const closeModalBtn = document.getElementById('close-modal');
@@ -105,17 +99,14 @@ radioToggles.forEach(radio => {
     });
 });
 
-// ==========================================
-// CŒUR DU DASHBOARD ET DU BUDGET
-// ==========================================
-let unsubscribeTransactions = null, unsubscribeBourse = null, unsubscribeImmo = null, unsubscribeAccounts = null, unsubscribeBudgets = null;
+let unsubscribeTransactions = null, unsubscribeBourse = null, unsubscribeImmo = null, unsubscribeAccounts = null, unsubscribeBudgets = null, unsubscribeBourseCash = null;
 let patrimoineChart = null, budgetChart = null;
 let userAccountsList = []; let budgetsMap = {}; 
 
 function initChart() {
     const ctx = document.getElementById('patrimoine-chart').getContext('2d');
     if(patrimoineChart) patrimoineChart.destroy();
-    patrimoineChart = new Chart(ctx, { type: 'doughnut', data: { labels: ['Liquidités', 'Marchés', 'Immobilier'], datasets: [{ data: [0, 0, 0], backgroundColor: ['#3B82F6', '#8B5CF6', '#10B981'], borderWidth: 0, hoverOffset: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#F8FAFC', padding: 20 } } }, cutout: '75%' } });
+    patrimoineChart = new Chart(ctx, { type: 'doughnut', data: { labels: ['Liquidités Bancaires', 'Marchés Financiers', 'Immobilier'], datasets: [{ data: [0, 0, 0], backgroundColor: ['#3B82F6', '#8B5CF6', '#10B981'], borderWidth: 0, hoverOffset: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#F8FAFC', padding: 20 } } }, cutout: '75%' } });
 }
 
 async function fetchPrices(tickers) {
@@ -128,16 +119,10 @@ async function fetchPrices(tickers) {
             chunk.forEach(t => {
                 const p = data[t] && data[t].priceEUR;
                 livePricesCache[t] = p > 0 ? p : null;
-                livePricesCacheMeta[t] = {
-                    priceEUR: p > 0 ? p : null,
-                    name: data[t] && data[t].name ? data[t].name : null
-                };
+                livePricesCacheMeta[t] = { priceEUR: p > 0 ? p : null, name: data[t] && data[t].name ? data[t].name : null };
             });
         } catch (e) {
-            chunk.forEach(t => {
-                livePricesCache[t] = null;
-                livePricesCacheMeta[t] = { priceEUR: null, name: null };
-            });
+            chunk.forEach(t => { livePricesCache[t] = null; livePricesCacheMeta[t] = { priceEUR: null, name: null }; });
         }
     }
 }
@@ -149,7 +134,6 @@ function loadDashboardData(userId) {
     let viewedDate = new Date();
     let globalTxDocs = [];
     const elLiquidites = document.querySelector('.category-card:nth-child(1) .amount');
-    const elBourse = document.querySelector('.category-card:nth-child(2) .amount');
     const elImmo = document.querySelector('.category-card:nth-child(3) .amount');
     const elNetWorth = document.querySelector('.net-worth-card .amount');
     let totalLiquidites = 0, totalBourse = 0, totalImmo = 0;
@@ -165,18 +149,20 @@ function loadDashboardData(userId) {
 
     document.getElementById('card-liquidites')?.addEventListener('click', () => { dashboardScreen.classList.add('hidden'); dashboardScreen.classList.remove('active'); budgetScreen.classList.remove('hidden'); budgetScreen.classList.add('active'); viewedDate = new Date(); renderTransactions(); });
     document.getElementById('card-bourse')?.addEventListener('click', () => { dashboardScreen.classList.add('hidden'); dashboardScreen.classList.remove('active'); bourseScreen.classList.remove('hidden'); bourseScreen.classList.add('active'); });
-    
     document.getElementById('btn-prev-month')?.addEventListener('click', () => { viewedDate = new Date(viewedDate.getFullYear(), viewedDate.getMonth() - 1, 1); renderTransactions(); });
     document.getElementById('btn-next-month')?.addEventListener('click', () => { viewedDate = new Date(viewedDate.getFullYear(), viewedDate.getMonth() + 1, 1); renderTransactions(); });
 
     document.getElementById('btn-toggle-perf')?.addEventListener('click', (e) => {
-        showBoursePercent = !showBoursePercent;
-        e.target.innerText = showBoursePercent ? "Afficher en €" : "Afficher en %";
+        showBoursePercent = !showBoursePercent; e.target.innerText = showBoursePercent ? "Afficher en €" : "Afficher en %";
         if(globalRenderBourse) globalRenderBourse();
     });
     
-    document.getElementById('bourse-filter')?.addEventListener('change', (e) => {
-        currentBourseFilter = e.target.value;
+    document.getElementById('bourse-filter')?.addEventListener('change', (e) => { currentBourseFilter = e.target.value; if(globalRenderBourse) globalRenderBourse(); });
+
+    // Abonnement aux poches d'espèces
+    unsubscribeBourseCash = onSnapshot(doc(db, `users/${userId}/bourse_settings`, 'cash'), (docSnap) => {
+        if (docSnap.exists()) { bourseCash = { PEA: 0, CTO: 0, "A.V.": 0, ...docSnap.data() }; } 
+        else { bourseCash = { PEA: 0, CTO: 0, "A.V.": 0 }; }
         if(globalRenderBourse) globalRenderBourse();
     });
 
@@ -207,8 +193,7 @@ function loadDashboardData(userId) {
                 if (balances[accName] === undefined) balances[accName] = 0;
                 balances[accName] += data.amount; totalLiquidites += data.amount;
             }
-            const txDate = data.date ? data.date.toDate() : new Date();
-            const dateStr = txDate.toLocaleDateString('fr-FR');
+            const txDate = data.date ? data.date.toDate() : new Date(); const dateStr = txDate.toLocaleDateString('fr-FR');
 
             if(htmlList.split('<li>').length <= 5) {
                 const accountBadge = data.type === 'transfer' ? `🔄 ${data.from_account} ➔ ${data.to_account}` : data.account || "Compte Courant";
@@ -231,59 +216,12 @@ function loadDashboardData(userId) {
         elLiquidites.innerText = formatEuro.format(totalLiquidites);
         let breakdownHtml = ''; for (const [accName, accTotal] of Object.entries(balances)) { breakdownHtml += `<div class="account-line"><span>${accName}</span><span class="acc-value">${formatEuro.format(accTotal)}</span></div>`; }
         if(document.getElementById('accounts-breakdown')) document.getElementById('accounts-breakdown').innerHTML = breakdownHtml;
-
         if(document.getElementById('month-in')) {
             document.getElementById('month-in').innerText = formatEuro.format(monthIn);
             document.getElementById('month-out').innerText = formatEuro.format(monthOut);
             const epargne = monthIn - monthOut;
             document.getElementById('month-rest').innerText = formatEuro.format(epargne);
             document.getElementById('month-rest').className = epargne >= 0 ? "amount highlight-green" : "amount highlight-red";
-            
-            const realizedLabels = new Set();
-            globalTxDocs.forEach(t => { const d = t.data(); const dt = d.date ? d.date.toDate() : null; if (dt && dt.getMonth() === viewedMonth && dt.getFullYear() === viewedYear && d.type === 'expense' && d.frequency === 'Mensuel') realizedLabels.add(d.label); });
-            const now = new Date(); const isHistory = viewedYear < now.getFullYear() || (viewedYear === now.getFullYear() && viewedMonth < now.getMonth());
-            let recurringCharges = [];
-            if (!isHistory) { globalTxDocs.forEach(t => { const d = t.data(); if (d.type === 'expense' && d.frequency === 'Mensuel' && !realizedLabels.has(d.label)) recurringCharges.push({ label: d.label, amount: Math.abs(d.amount), day: (d.date ? d.date.toDate() : new Date()).getDate() }); }); }
-            const chargesRestantes = recurringCharges.reduce((s, c) => s + c.amount, 0);
-            const resteReel = monthIn - monthOut - chargesRestantes;
-            if(document.getElementById('month-rest-reel')) { document.getElementById('month-rest-reel').innerText = formatEuro.format(resteReel); document.getElementById('month-rest-reel').className = resteReel >= 0 ? "amount highlight-green" : "amount highlight-red"; }
-            if(document.getElementById('upcoming-charges')) document.getElementById('upcoming-charges').innerHTML = recurringCharges.length ? '<strong>Charges à venir :</strong> ' + recurringCharges.map(c => `${c.label}`).join(', ') : '<span class="text-muted">Aucune charge fixe restante.</span>';
-
-            const sortedCats = Object.entries(categoriesExpenses).sort((a, b) => b[1] - a[1]);
-            Object.keys(budgetsMap).forEach(cat => { if (!sortedCats.some(([c]) => c === cat)) sortedCats.push([cat, 0]); });
-            sortedCats.sort((a, b) => b[1] - a[1]);
-            let catHtml = '';
-            sortedCats.forEach(([cat, amount]) => {
-                const limit = budgetsMap[cat] || 0; let fillClass = 'cat-progress-fill'; let labelRight, width;
-                if (limit > 0) { const ratio = amount / limit; width = Math.min(100, Math.round(ratio * 100)); if (ratio > 1) fillClass += ' gauge-red'; else if (ratio >= 0.8) fillClass += ' gauge-orange'; else fillClass += ' gauge-green'; labelRight = `${formatEuro.format(amount)} / ${formatEuro.format(limit)}`; } else { const percentage = monthOut > 0 ? Math.round((amount / monthOut) * 100) : 0; width = percentage; labelRight = `${formatEuro.format(amount)} (${percentage}%)`; }
-                catHtml += `<div style="margin-bottom: 15px;"><div class="cat-header"><span>${cat}</span><span>${labelRight}</span></div><div class="cat-progress-bg"><div class="${fillClass}" style="width: ${width}%"></div></div></div>`;
-            });
-            document.getElementById('category-analysis').innerHTML = catHtml || '<p class="text-muted">Aucune dépense ce mois-ci.</p>';
-            document.getElementById('detailed-tx-list').innerHTML = detailedHtmlList || '<p class="text-muted">Aucune transaction ce mois-ci.</p>';
-
-            const bctx = document.getElementById('budget-chart');
-            if (bctx) {
-                if (budgetChart) budgetChart.destroy();
-                const chartCats = sortedCats.filter(([cat, amount]) => amount > 0);
-                if (chartCats.length > 0) budgetChart = new Chart(bctx.getContext('2d'), { type: 'doughnut', data: { labels: chartCats.map(c => c[0]), datasets: [{ data: chartCats.map(c => c[1]), backgroundColor: CHART_PALETTE, borderWidth: 0, hoverOffset: 10 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#F8FAFC', padding: 15 } } }, cutout: '60%' } });
-            }
-
-            document.querySelectorAll('.btn-del-tx').forEach(btn => { btn.addEventListener('click', async (e) => { if(confirm("Supprimer cette opération ?")) await deleteDoc(doc(db, `users/${userId}/transactions`, e.currentTarget.dataset.id)); }); });
-            document.querySelectorAll('.btn-edit-tx').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const docId = e.currentTarget.dataset.id;
-                    const txData = JSON.parse(decodeURIComponent(e.currentTarget.dataset.full));
-                    document.getElementById('tx-id').value = docId;
-                    document.getElementById('tx-label').value = txData.label;
-                    document.getElementById('tx-amount').value = Math.abs(txData.amount);
-                    document.getElementById('tx-date').value = txData.dateISO;
-                    const radio = document.getElementById(`type-${txData.type}`);
-                    if(radio) { radio.checked = true; radio.dispatchEvent(new Event('change')); }
-                    if (txData.type === 'transfer') { document.getElementById('tx-from').value = txData.from_account; document.getElementById('tx-to').value = txData.to_account; } else { document.getElementById('tx-account').value = txData.account; document.getElementById('tx-category').value = txData.category || "Autre"; document.getElementById('tx-frequency').value = txData.frequency || "Ponctuel"; }
-                    document.getElementById('submit-tx').innerText = "Modifier l'opération";
-                    showModalView(viewTransaction); addModal.classList.remove('hidden');
-                });
-            });
         }
         updateNetWorthAndChart();
     };
@@ -297,49 +235,38 @@ function loadDashboardData(userId) {
     unsubscribeBourse = onSnapshot(query(collection(db, `users/${userId}/assets_bourse`)), (snapshot) => {
         const bourseDocs = snapshot.docs;
         globalRenderBourse = async () => {
-            // N'interroger l'API que pour les actifs en suivi "auto"
             const autoTickers = bourseDocs.map(d => d.data()).filter(d => d.tracking !== 'manual').map(d => d.ticker);
             await fetchPrices(autoTickers);
             
-
             for (const docSnapshot of bourseDocs) {
                 const data = docSnapshot.data();
                 const apiInfo = livePricesCacheMeta[data.ticker];
                 if (apiInfo && apiInfo.name && (!data.nom || data.nom === data.ticker)) {
-                    await updateDoc(doc(db, `users/${userId}/assets_bourse`, docSnapshot.id), {
-                        nom: apiInfo.name
-                    });
+                    await updateDoc(doc(db, `users/${userId}/assets_bourse`, docSnapshot.id), { nom: apiInfo.name });
                 }
             }
-
-            let newTotalBourse = 0, valPea = 0, achatPea = 0, valCto = 0, achatCto = 0, valAv = 0, achatAv = 0, totalAchatGlobale = 0;
+            
+            let valPeaAssets = 0, achatPea = 0, valCtoAssets = 0, achatCto = 0, valAvAssets = 0, achatAv = 0;
             let enrichedDocs = [];
 
             for (const docSnapshot of bourseDocs) {
-                const data = docSnapshot.data();
-                const isManual = data.tracking === 'manual';
-                // Si manuel, le prix live est le prix actuel saisi (ou prix d'achat par défaut). Sinon, on interroge le cache API.
+                const data = docSnapshot.data(); const isManual = data.tracking === 'manual';
                 const livePrice = isManual ? (data.prix_actuel || data.price_achat) : getLivePrice(data.ticker, data.price_achat);
-                
-                const valeurActuelle = data.quantity * livePrice;
-                const valAchat = data.quantity * data.price_achat;
+                const valeurActuelle = data.quantity * livePrice; const valAchat = data.quantity * data.price_achat;
                 enrichedDocs.push({ id: docSnapshot.id, data, livePrice, valeurActuelle, valAchat, isManual });
             }
 
             enrichedDocs.sort((a, b) => b.valeurActuelle - a.valeurActuelle);
-
-            let detailedHtml = '';
-            let dashboardHtml = '';
+            let detailedHtml = ''; let dashboardHtml = '';
 
             enrichedDocs.forEach(item => {
                 const { id, data, livePrice, valeurActuelle, valAchat, isManual } = item;
                 const plusValue = valeurActuelle - valAchat;
                 const percent = valAchat > 0 ? (plusValue / valAchat) * 100 : 0;
                 
-                newTotalBourse += valeurActuelle; totalAchatGlobale += valAchat;
-                if (data.enveloppe === 'PEA') { valPea += valeurActuelle; achatPea += valAchat; }
-                if (data.enveloppe === 'CTO') { valCto += valeurActuelle; achatCto += valAchat; }
-                if (data.enveloppe === 'A.V.') { valAv += valeurActuelle; achatAv += valAchat; }
+                if (data.enveloppe === 'PEA') { valPeaAssets += valeurActuelle; achatPea += valAchat; }
+                if (data.enveloppe === 'CTO') { valCtoAssets += valeurActuelle; achatCto += valAchat; }
+                if (data.enveloppe === 'A.V.') { valAvAssets += valeurActuelle; achatAv += valAchat; }
 
                 const pnlClass = plusValue >= 0 ? 'text-green' : 'text-red';
                 const sign = plusValue > 0 ? '+' : '';
@@ -351,72 +278,95 @@ function loadDashboardData(userId) {
                 }
 
                 if (currentBourseFilter === 'ALL' || data.enveloppe === currentBourseFilter) {
-                    // Si actif manuel, on rajoute un bouton "Modifier Prix" ✏️
-                    const editBtn = isManual ? `<button class="action-small edit btn-edit-price" data-id="${id}" data-name="${displayName}" data-price="${livePrice}" title="Mettre à jour le prix">✏️</button>` : '';
-                    
-                    detailedHtml += `<li><div class="item-details"><span class="item-title">${displayName} <span class="badge">${data.enveloppe} ${isManual?'(Manuel)':''}</span></span><span class="item-sub">${data.quantity} parts @ ${formatEuro.format(livePrice)}</span></div><div class="item-actions"><div class="item-details right" style="margin-right: 15px;"><span class="item-value">${formatEuro.format(valeurActuelle)}</span><span class="item-sub ${pnlClass}">${pnlDisplay}</span></div>${editBtn}<button class="btn-secondary sell-bourse" data-id="${id}" data-qty="${data.quantity}" data-ticker="${data.ticker}">Vendre</button></div></li>`;
+                    const editBtn = isManual ? `<button class="btn-secondary btn-edit-price" data-id="${id}" data-name="${displayName}" data-price="${livePrice}" style="margin-right: 8px;">Prix</button>` : '';
+                    detailedHtml += `<li><div class="item-details"><span class="item-title">${displayName} <span class="badge">${data.enveloppe} ${isManual?'(Manuel)':''}</span></span><span class="item-sub">${data.quantity} parts @ ${formatEuro.format(livePrice)}</span></div><div class="item-actions"><div class="item-details right" style="margin-right: 15px;"><span class="item-value">${formatEuro.format(valeurActuelle)}</span><span class="item-sub ${pnlClass}">${pnlDisplay}</span></div>${editBtn}<button class="btn-secondary sell-bourse" data-id="${id}" data-qty="${data.quantity}" data-ticker="${data.ticker}" data-liveprice="${livePrice}" data-env="${data.enveloppe}">Vendre</button></div></li>`;
                 }
             });
 
-            const bourseListEl = document.getElementById('bourse-list');
-            if (bourseListEl) bourseListEl.innerHTML = dashboardHtml || '<p class="text-muted">Aucune action.</p>';
-            totalBourse = newTotalBourse;
-            elBourse.innerText = formatEuro.format(totalBourse);
+            // Calculs finaux (Actifs + Espèces)
+            const totalPea = valPeaAssets + (bourseCash['PEA'] || 0);
+            const totalCto = valCtoAssets + (bourseCash['CTO'] || 0);
+            const totalAv = valAvAssets + (bourseCash['A.V.'] || 0);
+            const globalTotal = totalPea + totalCto + totalAv;
 
-            const formatPerf = (val, achat) => {
-                const diff = val - achat; const perc = achat > 0 ? (diff / achat) * 100 : 0; const sign = diff > 0 ? '+' : '';
+            if (document.getElementById('dashboard-bourse-total')) {
+                document.getElementById('dashboard-bourse-total').innerText = formatEuro.format(globalTotal);
+                document.getElementById('dashboard-bourse-breakdown').innerHTML = `<span>PEA: ${formatEuro.format(totalPea)}</span><span>CTO: ${formatEuro.format(totalCto)}</span><span>A.V.: ${formatEuro.format(totalAv)}</span>`;
+                const bourseListEl = document.getElementById('bourse-list');
+                if (bourseListEl) bourseListEl.innerHTML = dashboardHtml || '<p class="text-muted">Aucune action.</p>';
+            }
+
+            const formatPerf = (valAssets, achatAssets) => {
+                const diff = valAssets - achatAssets; const perc = achatAssets > 0 ? (diff / achatAssets) * 100 : 0; const sign = diff > 0 ? '+' : '';
                 return { txt: showBoursePercent ? `${sign}${perc.toFixed(2)}%` : `${sign}${formatEuro.format(diff)}`, color: diff >= 0 ? 'amount highlight-green' : 'amount highlight-red' };
             };
 
             if (document.getElementById('bourse-detailed-list')) {
                 document.getElementById('bourse-detailed-list').innerHTML = detailedHtml || '<p class="text-muted">Aucune action.</p>';
                 
-                const gPerf = formatPerf(totalBourse, totalAchatGlobale);
-                document.getElementById('bourse-global-perf').innerText = gPerf.txt; document.getElementById('bourse-global-perf').className = gPerf.color;
+                document.getElementById('bourse-pea-total').innerText = formatEuro.format(totalPea);
+                document.getElementById('bourse-cto-total').innerText = formatEuro.format(totalCto);
+                document.getElementById('bourse-av-total').innerText = formatEuro.format(totalAv);
+                document.getElementById('bourse-global-total').innerText = formatEuro.format(globalTotal);
 
-                const pPea = formatPerf(valPea, achatPea);
+                document.getElementById('bourse-pea-cash').innerText = formatEuro.format(bourseCash['PEA'] || 0);
+                document.getElementById('bourse-cto-cash').innerText = formatEuro.format(bourseCash['CTO'] || 0);
+                document.getElementById('bourse-av-cash').innerText = formatEuro.format(bourseCash['A.V.'] || 0);
+
+                const pPea = formatPerf(valPeaAssets, achatPea);
                 document.getElementById('bourse-pea-perf').innerText = pPea.txt; document.getElementById('bourse-pea-perf').className = pPea.color;
-
-                const pCto = formatPerf(valCto, achatCto);
+                const pCto = formatPerf(valCtoAssets, achatCto);
                 document.getElementById('bourse-cto-perf').innerText = pCto.txt; document.getElementById('bourse-cto-perf').className = pCto.color;
-
-                const pAv = formatPerf(valAv, achatAv);
-                if(document.getElementById('bourse-av-perf')) {
-                    document.getElementById('bourse-av-perf').innerText = pAv.txt; document.getElementById('bourse-av-perf').className = pAv.color;
-                }
+                const pAv = formatPerf(valAvAssets, achatAv);
+                document.getElementById('bourse-av-perf').innerText = pAv.txt; document.getElementById('bourse-av-perf').className = pAv.color;
+                const gPerf = formatPerf(valPeaAssets + valCtoAssets + valAvAssets, achatPea + achatCto + achatAv);
+                document.getElementById('bourse-global-perf').innerText = gPerf.txt; document.getElementById('bourse-global-perf').className = gPerf.color;
             }
 
+            totalBourse = globalTotal; // Le total du patrimoine intègre maintenant les espèces bourse
             updateNetWorthAndChart();
             
-            // Bouton de vente
+            // Logique de Vente (Ajoute automatiquement à la poche espèces)
             document.querySelectorAll('.sell-bourse').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     const docId = e.currentTarget.dataset.id; const maxQty = parseFloat(e.currentTarget.dataset.qty);
+                    const liveP = parseFloat(e.currentTarget.dataset.liveprice); const env = e.currentTarget.dataset.env;
                     const qtyToSellStr = prompt(`Combien de parts voulez-vous vendre ? (Maximum: ${maxQty})`);
                     if (qtyToSellStr !== null && qtyToSellStr.trim() !== "") {
                         const qtyToSell = parseFloat(qtyToSellStr.replace(',', '.'));
                         if (isNaN(qtyToSell) || qtyToSell <= 0 || qtyToSell > maxQty) return alert("Quantité invalide.");
+                        
+                        // Ajout du gain à la poche liquidités
+                        const cashGagne = qtyToSell * liveP;
+                        const newCash = (bourseCash[env] || 0) + cashGagne;
+                        await setDoc(doc(db, `users/${userId}/bourse_settings`, 'cash'), { [env]: newCash }, { merge: true });
+
                         if (qtyToSell === maxQty) await deleteDoc(doc(db, `users/${userId}/assets_bourse`, docId));
                         else await updateDoc(doc(db, `users/${userId}/assets_bourse`, docId), { quantity: maxQty - qtyToSell });
                     }
                 });
             });
 
-            // NOUVEAU : Bouton pour mettre à jour le prix manuellement
             document.querySelectorAll('.btn-edit-price').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
-                    const docId = e.currentTarget.dataset.id;
-                    const nom = e.currentTarget.dataset.name;
-                    const oldPrice = parseFloat(e.currentTarget.dataset.price);
-                    
+                    const docId = e.currentTarget.dataset.id; const nom = e.currentTarget.dataset.name; const oldPrice = parseFloat(e.currentTarget.dataset.price);
                     const newPriceStr = prompt(`Nouveau prix actuel pour ${nom} ? (Prix actuel : ${oldPrice} €)`);
                     if (newPriceStr !== null && newPriceStr.trim() !== "") {
                         const newPrice = parseFloat(newPriceStr.replace(',', '.'));
-                        if (!isNaN(newPrice) && newPrice >= 0) {
-                            await updateDoc(doc(db, `users/${userId}/assets_bourse`, docId), { prix_actuel: newPrice });
-                        } else {
-                            alert("Prix invalide.");
-                        }
+                        if (!isNaN(newPrice) && newPrice >= 0) { await updateDoc(doc(db, `users/${userId}/assets_bourse`, docId), { prix_actuel: newPrice }); } 
+                        else { alert("Prix invalide."); }
+                    }
+                });
+            });
+
+            // Bouton ✏️ pour modifier les espèces manuellement
+            document.querySelectorAll('.btn-edit-cash').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const env = e.currentTarget.dataset.env; const currentVal = bourseCash[env] || 0;
+                    const newValStr = prompt(`Dépôt/Retrait de liquidités pour ${env} ? (Total actuel: ${currentVal} €)`, currentVal);
+                    if (newValStr !== null && newValStr.trim() !== "") {
+                        const newVal = parseFloat(newValStr.replace(',', '.'));
+                        if (!isNaN(newVal)) { await setDoc(doc(db, `users/${userId}/bourse_settings`, 'cash'), { [env]: newVal }, { merge: true }); }
                     }
                 });
             });
@@ -442,7 +392,7 @@ function renderBudgetsManager() {
 }
 
 function stopDashboardData() {
-    if (unsubscribeTransactions) unsubscribeTransactions(); if (unsubscribeBourse) unsubscribeBourse(); if (unsubscribeImmo) unsubscribeImmo(); if (unsubscribeAccounts) unsubscribeAccounts(); if (unsubscribeBudgets) unsubscribeBudgets();
+    if (unsubscribeTransactions) unsubscribeTransactions(); if (unsubscribeBourse) unsubscribeBourse(); if (unsubscribeImmo) unsubscribeImmo(); if (unsubscribeAccounts) unsubscribeAccounts(); if (unsubscribeBudgets) unsubscribeBudgets(); if (unsubscribeBourseCash) unsubscribeBourseCash();
     if (patrimoineChart) patrimoineChart.destroy(); if (budgetChart) budgetChart.destroy();
 }
 
@@ -455,39 +405,24 @@ document.querySelector('.action-btn[data-type="immo"]').addEventListener('click'
 const expressBtn = document.querySelector('.action-btn[data-type="express"]');
 if (expressBtn) expressBtn.addEventListener('click', () => { if(document.getElementById('express-amount')) document.getElementById('express-amount').value = ''; showModalView(viewExpress); });
 document.querySelectorAll('.back-to-choices').forEach(btn => btn.addEventListener('click', () => showModalView(viewChoice)));
-
 document.querySelectorAll('.express-cat').forEach(btn => { btn.addEventListener('click', () => { document.querySelectorAll('.express-cat').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }); });
 
 const allForms = [document.getElementById('transaction-form'), document.getElementById('bourse-form'), document.getElementById('immo-form'), document.getElementById('express-form')];
 function closeAndResetModal() { addModal.classList.add('hidden'); setTimeout(() => { showModalView(viewChoice); allForms.forEach(form => { if (form) form.reset(); }); }, 500); }
 
-// --- Autocomplétion Bourse ---
-const searchInput = document.getElementById('bourse-search');
-const hiddenTicker = document.getElementById('bourse-ticker');
-const hiddenName = document.getElementById('bourse-name'); 
-const resultsList = document.getElementById('bourse-results');
-let searchTimeout;
-
+const searchInput = document.getElementById('bourse-search'); const hiddenTicker = document.getElementById('bourse-ticker'); const hiddenName = document.getElementById('bourse-name'); const resultsList = document.getElementById('bourse-results'); let searchTimeout;
 if (searchInput) {
     searchInput.addEventListener('input', (e) => {
         clearTimeout(searchTimeout); hiddenTicker.value = ''; hiddenName.value = '';
-        const queryVal = e.target.value.trim();
-        if (queryVal.length < 2) { resultsList.classList.add('hidden'); return; }
+        const queryVal = e.target.value.trim(); if (queryVal.length < 2) { resultsList.classList.add('hidden'); return; }
         searchTimeout = setTimeout(async () => {
             try {
                 const res = await fetch(`${PRICE_API_URL}/search?q=${encodeURIComponent(queryVal)}`);
-                const results = await res.json();
-                resultsList.innerHTML = '';
+                const results = await res.json(); resultsList.innerHTML = '';
                 if (Array.isArray(results) && results.length > 0) {
                     results.forEach(item => {
-                        const li = document.createElement('li');
-                        li.innerHTML = `<span class="result-name">${item.name}</span> <span class="result-symbol">${item.symbol} (${item.exchange})</span>`;
-                        li.addEventListener('click', () => {
-                            searchInput.value = item.name;
-                            hiddenName.value = item.name; 
-                            hiddenTicker.value = item.symbol;
-                            resultsList.classList.add('hidden');
-                        });
+                        const li = document.createElement('li'); li.innerHTML = `<span class="result-name">${item.name}</span> <span class="result-symbol">${item.symbol} (${item.exchange})</span>`;
+                        li.addEventListener('click', () => { searchInput.value = item.name; hiddenName.value = item.name; hiddenTicker.value = item.symbol; resultsList.classList.add('hidden'); });
                         resultsList.appendChild(li);
                     });
                 } else { resultsList.innerHTML = '<li class="text-muted">Aucun résultat</li>'; }
@@ -498,9 +433,6 @@ if (searchInput) {
     document.addEventListener('click', (e) => { if (!e.target.closest('.autocomplete-container')) resultsList.classList.add('hidden'); });
 }
 
-// ==========================================
-// SOUMISSIONS FIRESTORE
-// ==========================================
 const btnAddAccount = document.getElementById('btn-add-account');
 if (btnAddAccount) { btnAddAccount.addEventListener('click', async () => { const accName = prompt("Nom du nouveau compte :"); if (accName && accName.trim() !== "") { const user = auth.currentUser; if (user) await addDoc(collection(db, `users/${user.uid}/accounts`), { name: accName.trim(), date: serverTimestamp() }); } }); }
 
@@ -520,17 +452,13 @@ document.getElementById('transaction-form').addEventListener('submit', async (e)
 document.getElementById('express-form').addEventListener('submit', async (e) => {
     e.preventDefault(); const user = auth.currentUser; if (!user) return;
     const amount = parseFloat(document.getElementById('express-amount').value); if (isNaN(amount) || amount <= 0) return;
-    const activeCat = document.querySelector('.express-cat.active'); const cat = activeCat ? activeCat.dataset.cat : 'Autre';
-    const account = document.getElementById('express-account').value || "Compte Courant"; const now = new Date();
+    const activeCat = document.querySelector('.express-cat.active'); const cat = activeCat ? activeCat.dataset.cat : 'Autre'; const account = document.getElementById('express-account').value || "Compte Courant"; const now = new Date();
     await addDoc(collection(db, `users/${user.uid}/transactions`), { label: cat, type: 'expense', amount: -Math.abs(amount), account: account, category: cat, frequency: 'Ponctuel', date: new Date(now.getFullYear(), now.getMonth(), now.getDate()) });
     closeAndResetModal();
 });
 
 document.getElementById('bourse-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const user = auth.currentUser;
-    if (!user) return;
-
+    e.preventDefault(); const user = auth.currentUser; if (!user) return;
     const searchVal = document.getElementById('bourse-search').value.trim();
     const ticker = (document.getElementById('bourse-ticker').value || searchVal).toUpperCase();
     const name = document.getElementById('bourse-name').value || searchVal;
@@ -539,57 +467,27 @@ document.getElementById('bourse-form').addEventListener('submit', async (e) => {
     const addedPrice = parseFloat(document.getElementById('bourse-price').value);
     const enveloppe = document.getElementById('bourse-enveloppe').value;
 
-    if (!ticker || isNaN(addedQty) || addedQty <= 0 || isNaN(addedPrice) || addedPrice < 0) {
-        return alert("Veuillez renseigner des valeurs valides.");
-    }
+    if (!ticker || isNaN(addedQty) || addedQty <= 0 || isNaN(addedPrice) || addedPrice < 0) return alert("Valeurs invalides.");
 
-    // Recherche d'une ligne existante pour le même ticker et la même enveloppe
+    // Déduction automatique du coût d'achat de la poche liquidités
+    const cost = addedQty * addedPrice;
+    await setDoc(doc(db, `users/${user.uid}/bourse_settings`, 'cash'), { [enveloppe]: (bourseCash[enveloppe] || 0) - cost }, { merge: true });
+
     const existingSnap = await getDocs(collection(db, `users/${user.uid}/assets_bourse`));
     let matchingDoc = null;
-
-    existingSnap.forEach((d) => {
-        const item = d.data();
-        if ((item.ticker || '').toUpperCase() === ticker && item.enveloppe === enveloppe) {
-            matchingDoc = { id: d.id, ...item };
-        }
-    });
+    existingSnap.forEach((d) => { const item = d.data(); if ((item.ticker || '').toUpperCase() === ticker && item.enveloppe === enveloppe) matchingDoc = { id: d.id, ...item }; });
 
     if (matchingDoc) {
-        const oldQty = parseFloat(matchingDoc.quantity) || 0;
-        const oldPru = parseFloat(matchingDoc.price_achat) || 0;
-        const totalQty = oldQty + addedQty;
-        const newPru = totalQty > 0 ? ((oldQty * oldPru) + (addedQty * addedPrice)) / totalQty : addedPrice;
-
-        const updatePayload = {
-            quantity: totalQty,
-            price_achat: newPru,
-            nom: matchingDoc.nom || name,
-            tracking: matchingDoc.tracking || tracking
-        };
-
-        if ((matchingDoc.tracking || tracking) === 'manual') {
-            updatePayload.prix_actuel = addedPrice;
-        }
-
+        const oldQty = parseFloat(matchingDoc.quantity) || 0; const oldPru = parseFloat(matchingDoc.price_achat) || 0;
+        const totalQty = oldQty + addedQty; const newPru = totalQty > 0 ? ((oldQty * oldPru) + (addedQty * addedPrice)) / totalQty : addedPrice;
+        const updatePayload = { quantity: totalQty, price_achat: newPru, nom: matchingDoc.nom || name, tracking: matchingDoc.tracking || tracking };
+        if ((matchingDoc.tracking || tracking) === 'manual') updatePayload.prix_actuel = addedPrice;
         await updateDoc(doc(db, `users/${user.uid}/assets_bourse`, matchingDoc.id), updatePayload);
     } else {
-        const assetData = {
-            nom: name,
-            ticker: ticker,
-            quantity: addedQty,
-            price_achat: addedPrice,
-            enveloppe: enveloppe,
-            tracking: tracking,
-            date_ajout: serverTimestamp()
-        };
-
-        if (tracking === 'manual') {
-            assetData.prix_actuel = addedPrice;
-        }
-
+        const assetData = { nom: name, ticker: ticker, quantity: addedQty, price_achat: addedPrice, enveloppe: enveloppe, tracking: tracking, date_ajout: serverTimestamp() };
+        if (tracking === 'manual') assetData.prix_actuel = addedPrice;
         await addDoc(collection(db, `users/${user.uid}/assets_bourse`), assetData);
     }
-
     closeAndResetModal();
 });
 
