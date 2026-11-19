@@ -56,14 +56,15 @@
                     <div id="accounts-breakdown" class="accounts-breakdown"></div>
                 </div>
 
+
                 <div class="card category-card" id="card-bourse">
                     <div class="card-header">
                         <h3>Marchés Financiers</h3>
                         <span class="icon">📈</span>
                     </div>
                     <h2 id="dashboard-bourse-total" class="amount">0,00 €</h2>
-                    <div id="dashboard-bourse-breakdown" style="font-size: 0.8rem; color: #94A3B8; margin-top: 5px; display: flex; justify-content: space-between;">
-                        <span>PEA: 0€</span><span>CTO: 0€</span><span>A.V.: 0€</span>
+                    <div id="dashboard-bourse-breakdown" style="margin-top: 15px; border-top: 1px solid #334155; padding-top: 10px;">
+                        <!-- Les lignes seront générées ici par app.js -->
                     </div>
                 </div>
 
@@ -137,36 +138,21 @@
             <!-- Bilan du mois -->
             <div class="dashboard-grid mb-2">
                 <div class="card">
-                    <h3>Total Global</h3>
-                    <h2 id="bourse-global-total" class="amount">0,00 €</h2>
-                    <p id="bourse-global-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 €</p>
+                    <h3>Revenus du mois</h3>
+                    <h2 id="month-in" class="amount highlight-green">0,00 €</h2>
                 </div>
                 <div class="card">
-                    <h3>Total PEA</h3>
-                    <h2 id="bourse-pea-total" class="amount">0,00 €</h2>
-                    <p id="bourse-pea-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 €</p>
-                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 8px; display: flex; justify-content: space-between; border-top: 1px solid #334155; padding-top: 5px;">
-                        <span>Espèces: <span id="bourse-pea-cash">0,00 €</span></span>
-                        <button class="action-small edit btn-edit-cash" data-env="PEA" style="padding: 0 5px; background:none; border:none; cursor:pointer;">✏️</button>
-                    </div>
+                    <h3>Dépenses du mois</h3>
+                    <h2 id="month-out" class="amount highlight-red">0,00 €</h2>
                 </div>
                 <div class="card">
-                    <h3>Total CTO</h3>
-                    <h2 id="bourse-cto-total" class="amount">0,00 €</h2>
-                    <p id="bourse-cto-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 €</p>
-                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 8px; display: flex; justify-content: space-between; border-top: 1px solid #334155; padding-top: 5px;">
-                        <span>Espèces: <span id="bourse-cto-cash">0,00 €</span></span>
-                        <button class="action-small edit btn-edit-cash" data-env="CTO" style="padding: 0 5px; background:none; border:none; cursor:pointer;">✏️</button>
-                    </div>
+                    <h3>Capacité d'Épargne (Reste)</h3>
+                    <h2 id="month-rest" class="amount">0,00 €</h2>
                 </div>
                 <div class="card">
-                    <h3>Total A.V.</h3>
-                    <h2 id="bourse-av-total" class="amount">0,00 €</h2>
-                    <p id="bourse-av-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 €</p>
-                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 8px; display: flex; justify-content: space-between; border-top: 1px solid #334155; padding-top: 5px;">
-                        <span>Fond €: <span id="bourse-av-cash">0,00 €</span></span>
-                        <button class="action-small edit btn-edit-cash" data-env="A.V." style="padding: 0 5px; background:none; border:none; cursor:pointer;">✏️</button>
-                    </div>
+                    <h3>Reste à Vivre Réel</h3>
+                    <h2 id="month-rest-reel" class="amount">0,00 €</h2>
+                    <p id="upcoming-charges" class="text-muted" style="text-align: left; margin-top: 0.5rem;">Chargement...</p>
                 </div>
             </div>
 
@@ -220,21 +206,41 @@
         </header>
         <main class="dashboard-content">
             <div class="dashboard-grid mb-2">
+                <!-- Global -->
                 <div class="card">
-                    <h3>Plus-Value Globale</h3>
-                    <h2 id="bourse-global-perf" class="amount">0,00 €</h2>
+                    <h3>Total Global</h3>
+                    <h2 id="bourse-global-total" class="amount">0,00 €</h2>
+                    <p id="bourse-global-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 € (0,00%)</p>
                 </div>
+                <!-- PEA -->
                 <div class="card">
-                    <h3>Performance PEA</h3>
-                    <h2 id="bourse-pea-perf" class="amount">0,00 €</h2>
+                    <h3>PEA</h3>
+                    <h2 id="bourse-pea-total" class="amount">0,00 €</h2>
+                    <p id="bourse-pea-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 € (0,00%)</p>
+                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 8px; border-top: 1px solid #334155; padding-top: 8px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Investi :</span> <span id="bourse-pea-investi" class="text-white">0,00 €</span></div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;"><span>Espèces :</span> <div><span id="bourse-pea-cash" class="text-white">0,00 €</span> <button class="action-small edit btn-edit-cash" data-env="PEA" style="background:none;border:none;cursor:pointer;">✏️</button></div></div>
+                    </div>
                 </div>
+                <!-- CTO -->
                 <div class="card">
-                    <h3>Performance CTO</h3>
-                    <h2 id="bourse-cto-perf" class="amount">0,00 €</h2>
+                    <h3>CTO</h3>
+                    <h2 id="bourse-cto-total" class="amount">0,00 €</h2>
+                    <p id="bourse-cto-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 € (0,00%)</p>
+                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 8px; border-top: 1px solid #334155; padding-top: 8px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Investi :</span> <span id="bourse-cto-investi" class="text-white">0,00 €</span></div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;"><span>Espèces :</span> <div><span id="bourse-cto-cash" class="text-white">0,00 €</span> <button class="action-small edit btn-edit-cash" data-env="CTO" style="background:none;border:none;cursor:pointer;">✏️</button></div></div>
+                    </div>
                 </div>
+                <!-- A.V. -->
                 <div class="card">
-                    <h3>Performance A.V.</h3>
-                    <h2 id="bourse-av-perf" class="amount">0,00 €</h2>
+                    <h3>Assurance Vie</h3>
+                    <h2 id="bourse-av-total" class="amount">0,00 €</h2>
+                    <p id="bourse-av-perf" class="amount" style="font-size: 1rem; margin-top: 5px;">0,00 € (0,00%)</p>
+                    <div style="font-size: 0.8rem; color: #94A3B8; margin-top: 8px; border-top: 1px solid #334155; padding-top: 8px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Unités de Compte :</span> <span id="bourse-av-investi" class="text-white">0,00 €</span></div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;"><span>Fonds Euros :</span> <div><span id="bourse-av-cash" class="text-white">0,00 €</span> <button class="action-small edit btn-edit-cash" data-env="A.V." style="background:none;border:none;cursor:pointer;">✏️</button></div></div>
+                    </div>
                 </div>
             </div>
             <div class="card list-card">
