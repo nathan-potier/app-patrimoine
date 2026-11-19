@@ -127,6 +127,17 @@ async function fetchPrices(tickers) {
             chunk.forEach(t => { const p = data[t] && data[t].priceEUR; livePricesCache[t] = p > 0 ? p : null; });
         } catch (e) { chunk.forEach(t => { livePricesCache[t] = null; }); }
     }
+
+
+    for (const docSnapshot of bourseDocs) {
+        const data = docSnapshot.data();
+        const apiInfo = livePricesCacheMeta[data.ticker]; // { priceEUR, name }
+        if (apiInfo && apiInfo.name && (!data.nom || data.nom === data.ticker)) {
+            await updateDoc(doc(db, `users/${userId}/assets_bourse`, docSnapshot.id), {
+            nom: apiInfo.name
+            });
+        }
+    }
 }
 
 function getLivePrice(ticker, fallbackPrice) { const p = livePricesCache[ticker]; return p > 0 ? p : fallbackPrice; }
