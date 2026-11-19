@@ -19,6 +19,7 @@ const provider = new GoogleAuthProvider();
 const PRICE_API_URL = "https://noisy-moon-34c5.nathan-pro-po.workers.dev"; 
 
 const livePricesCache = {};
+const livePricesCacheMeta = {};
 const formatEuro = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
 const CATEGORIES = ['Salaire', 'Logement', 'Alimentation', 'Transports', 'Loisirs', 'Autre'];
 const CHART_PALETTE = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4'];
@@ -124,17 +125,18 @@ async function fetchPrices(tickers) {
         try {
             const res = await fetch(`${PRICE_API_URL}/quote?symbols=${chunk.map(encodeURIComponent).join(',')}`);
             const data = await res.json();
-            chunk.forEach(t => { const p = data[t] && data[t].priceEUR; livePricesCache[t] = p > 0 ? p : null; });
-        } catch (e) { chunk.forEach(t => { livePricesCache[t] = null; }); }
-    }
-
-
-    for (const docSnapshot of bourseDocs) {
-        const data = docSnapshot.data();
-        const apiInfo = livePricesCacheMeta[data.ticker]; // { priceEUR, name }
-        if (apiInfo && apiInfo.name && (!data.nom || data.nom === data.ticker)) {
-            await updateDoc(doc(db, `users/${userId}/assets_bourse`, docSnapshot.id), {
-            nom: apiInfo.name
+            chunk.forEach(t => {
+                const p = data[t] && data[t].priceEUR;
+                livePricesCache[t] = p > 0 ? p : null;
+                livePricesCacheMeta[t] = {
+                    priceEUR: p > 0 ? p : null,
+                    name: data[t] && data[t].name ? data[t].name : null
+                };
+            });
+        } catch (e) {
+            chunk.forEach(t => {
+                livePricesCache[t] = null;
+                livePricesCacheMeta[t] = { priceEUR: null, name: null };
             });
         }
     }
@@ -299,6 +301,17 @@ function loadDashboardData(userId) {
             const autoTickers = bourseDocs.map(d => d.data()).filter(d => d.tracking !== 'manual').map(d => d.ticker);
             await fetchPrices(autoTickers);
             
+
+            for (const docSnapshot of bourseDocs) {
+                const data = docSnapshot.data();
+                const apiInfo = livePricesCacheMeta[data.ticker];
+                if (apiInfo && apiInfo.name && (!data.nom || data.nom === data.ticker)) {
+                    await updateDoc(doc(db, `users/${userId}/assets_bourse`, docSnapshot.id), {
+                        nom: apiInfo.name
+                    });
+                }
+            }
+
             let newTotalBourse = 0, valPea = 0, achatPea = 0, valCto = 0, achatCto = 0, valAv = 0, achatAv = 0, totalAchatGlobale = 0;
             let enrichedDocs = [];
 
